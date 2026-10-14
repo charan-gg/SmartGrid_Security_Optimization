@@ -1,0 +1,14 @@
+# Core (already present in .venv)
+numpy>=2.0
+pandas>=2.2
+scikit-learn>=1.5
+scipy>=1.13
+pyarrow>=16            # parquet cache in src/loading.py
+
+# Required for the intended model and for E7
+xgboost>=2.0
+shap>=0.45
+
+# Needed from step 6 onwards (replay harness), not by steps 1-4
+simpy>=4.1
+matplotlib>=3.8

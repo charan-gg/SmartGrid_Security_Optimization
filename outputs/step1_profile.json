@@ -1,0 +1,70 @@
+{
+  "n_rows": 78377,
+  "n_features": 132,
+  "triple_counts": {
+    "Attack": 55663,
+    "Natural": 18309,
+    "NoEvents": 4405
+  },
+  "majority_class_accuracy": 0.7101955930949131,
+  "structure": {
+    "n_rows": 78377,
+    "n_events": 553,
+    "n_scenarios": 37,
+    "n_files": 15,
+    "rows_per_event_min": 13,
+    "rows_per_event_median": 123,
+    "rows_per_event_max": 514,
+    "class_counts": {
+      "Attack": 55663,
+      "Natural": 18309,
+      "NoEvents": 4405
+    }
+  },
+  "constant_columns": [],
+  "modality_density": [
+    {
+      "modality": "pmu",
+      "n_columns": 120,
+      "rows_with_any_signal": 78377,
+      "fraction": 1.0
+    },
+    {
+      "modality": "relay",
+      "n_columns": 4,
+      "rows_with_any_signal": 6266,
+      "fraction": 0.07994692320451152
+    },
+    {
+      "modality": "snort",
+      "n_columns": 4,
+      "rows_with_any_signal": 14,
+      "fraction": 0.00017862383097082052
+    },
+    {
+      "modality": "control",
+      "n_columns": 4,
+      "rows_with_any_signal": 5,
+      "fraction": 6.379422534672161e-05
+    }
+  ],
+  "duplicate_feature_rows": 9,
+  "choices": {
+    "target": "y_triple",
+    "inf_policy": "nan",
+    "add_inf_indicators": true,
+    "group_key": "event_id",
+    "n_splits": 5,
+    "random_seed": 42,
+    "sample_rate_hz_CONFIRM": 120,
+    "benign_fraction_CONFIRM": 0.999,
+    "model_params": {
+      "n_estimators": 300,
+      "max_depth": 6,
+      "learning_rate": 0.1,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "reg_lambda": 1.0
+    }
+  }
+}

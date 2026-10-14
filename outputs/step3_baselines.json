@@ -1,0 +1,105 @@
+{
+  "backend": "xgboost",
+  "structure": {
+    "n_rows": 78377,
+    "n_events": 553,
+    "n_scenarios": 37,
+    "n_files": 15,
+    "rows_per_event_min": 13,
+    "rows_per_event_median": 123,
+    "rows_per_event_max": 514,
+    "class_counts": {
+      "Attack": 55663,
+      "Natural": 18309,
+      "NoEvents": 4405
+    }
+  },
+  "leakage_control": {
+    "identifiers_only": {
+      "macro_f1": 0.2998347307476184,
+      "macro_f1__sd": 0.039016827501139016,
+      "macro_recall": 0.30603766054194587,
+      "macro_recall__sd": 0.04004229494194187,
+      "recall__NoEvents": 0.0,
+      "recall__NoEvents__sd": 0.0,
+      "recall__Natural": 0.15173270402690298,
+      "recall__Natural__sd": 0.07627791365993339,
+      "recall__Attack": 0.7663802775989347,
+      "recall__Attack__sd": 0.048213983394950456
+    },
+    "scenario_id_only": {
+      "macro_f1": 1.0,
+      "macro_f1__sd": 0.0,
+      "macro_recall": 1.0,
+      "macro_recall__sd": 0.0,
+      "recall__NoEvents": 1.0,
+      "recall__NoEvents__sd": 0.0,
+      "recall__Natural": 1.0,
+      "recall__Natural__sd": 0.0,
+      "recall__Attack": 1.0,
+      "recall__Attack__sd": 0.0
+    }
+  },
+  "baselines": {
+    "naive_rows": {
+      "macro_f1": 0.8046027742990717,
+      "macro_f1__sd": 0.0017308433984194564,
+      "macro_recall": 0.7753044892942526,
+      "macro_recall__sd": 0.003470853710359353,
+      "recall__NoEvents": 0.9130533484676505,
+      "recall__NoEvents__sd": 0.0062418738183280375,
+      "recall__Natural": 0.4379027853631895,
+      "recall__Natural__sd": 0.00549036607836687,
+      "recall__Attack": 0.9749573340519178,
+      "recall__Attack__sd": 0.0007941089052474947,
+      "pr_auc__NoEvents": 0.9762899000220603,
+      "pr_auc__NoEvents__sd": 0.0028326054178266368,
+      "pr_auc__Natural": 0.7972259131925161,
+      "pr_auc__Natural__sd": 0.004801186435891382,
+      "pr_auc__Attack": 0.9683419008003111,
+      "pr_auc__Attack__sd": 0.0010828687617617228,
+      "macro_pr_auc": 0.9139525713382959,
+      "macro_pr_auc__sd": 0.0027137148378244434
+    },
+    "by_event": {
+      "macro_f1": 0.5963099725516826,
+      "macro_f1__sd": 0.009487967497020675,
+      "macro_recall": 0.5803200838191083,
+      "macro_recall__sd": 0.013159355636151804,
+      "recall__NoEvents": 0.6483291389754007,
+      "recall__NoEvents__sd": 0.042111952978234404,
+      "recall__Natural": 0.1819415101741824,
+      "recall__Natural__sd": 0.02209561256859682,
+      "recall__Attack": 0.9106896023077414,
+      "recall__Attack__sd": 0.013706102920103132,
+      "pr_auc__NoEvents": 0.812119028616354,
+      "pr_auc__NoEvents__sd": 0.03558172002290125,
+      "pr_auc__Natural": 0.3773241444563205,
+      "pr_auc__Natural__sd": 0.03204906162298595,
+      "pr_auc__Attack": 0.8638860676058586,
+      "pr_auc__Attack__sd": 0.012181985297354595,
+      "macro_pr_auc": 0.6844430802261777,
+      "macro_pr_auc__sd": 0.0073731616154741044
+    },
+    "by_scenario": {
+      "macro_f1": 0.2872298263736229,
+      "macro_f1__sd": 0.03380910276522699,
+      "macro_recall": 0.3158328426432163,
+      "macro_recall__sd": 0.033495359839453016,
+      "recall__NoEvents": 0.0,
+      "recall__NoEvents__sd": 0.0,
+      "recall__Natural": 0.07925322918703899,
+      "recall__Natural__sd": 0.059764636403986826,
+      "recall__Attack": 0.8682452987426099,
+      "recall__Attack__sd": 0.06225565183053306,
+      "pr_auc__NoEvents": 0.32000889700643875,
+      "pr_auc__NoEvents__sd": 0.0,
+      "pr_auc__Natural": 0.2899215223328556,
+      "pr_auc__Natural__sd": 0.14417645123400558,
+      "pr_auc__Attack": 0.7490813674830109,
+      "pr_auc__Attack__sd": 0.20466998539086775,
+      "macro_pr_auc": 0.577022720206156,
+      "macro_pr_auc__sd": 0.2155562069071503
+    }
+  }
+}

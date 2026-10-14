@@ -1,0 +1,17 @@
+{
+  "view_sizes": {
+    "pmu": 120,
+    "relay": 4,
+    "snort": 4,
+    "control": 4,
+    "all": 132,
+    "cyber_only": 12
+  },
+  "engineered": [
+    "R1-PA:Z__was_inf",
+    "R2-PA:Z__was_inf",
+    "R3-PA:Z__was_inf",
+    "R4-PA:Z__was_inf"
+  ],
+  "unknown_columns": []
+}

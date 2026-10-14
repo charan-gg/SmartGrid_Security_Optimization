@@ -1,0 +1,107 @@
+model backend : xgboost
+experiments   : e1, e2, e3
+loaded        : 78,377 rows, 132 features, 553 event instances
+
+==============================================================================
+E1 MODALITY ABLATION            -> is a fusion point needed
+==============================================================================
+  pmu          n= 120  macroF1=0.5964+/-0.0085  NoE=0.642  Nat=0.186  Att=0.909
+  relay        n=   4  macroF1=0.3212+/-0.0118  NoE=0.000  Nat=0.078  Att=0.977
+  snort        n=   4  macroF1=0.2768+/-0.0003  NoE=0.000  Nat=0.000  Att=1.000
+  control      n=   4  macroF1=0.2768+/-0.0003  NoE=0.000  Nat=0.000  Att=1.000
+  all          n= 132  macroF1=0.5963+/-0.0095  NoE=0.648  Nat=0.182  Att=0.911
+  cyber_only   n=  12  macroF1=0.3212+/-0.0118  NoE=0.000  Nat=0.078  Att=0.977
+
+  PER-CLASS WINNER (H1 complementarity)
+    NoEvents   best single modality = pmu      (0.642)   fused = 0.648
+    Natural    best single modality = pmu      (0.186)   fused = 0.182
+    Attack     best single modality = snort    (1.000)   fused = 0.911
+    -> 2 distinct winning modalities across 3 classes.
+       H1 is supported only if this is > 1. If it is 1, say so plainly in the report rather than burying it.
+
+  fusion gain over best single view: -0.0001 (fold SD 0.0095)
+    -> if the gain is smaller than the SD, fusion buys nothing measurable here and must be justified on COVERAGE, not accuracy.
+
+  [e1 finished in 2659.5s]
+
+==============================================================================
+E2 OBSERVABILITY + LEAD TIME    -> which levels to instrument
+==============================================================================
+
+  DETECTION RATE AND TIME-TO-VERDICT, per modality
+            detection_rate  median_verdict_sample  median_verdict_ms  p90_verdict_ms
+view                                                                                
+all                  0.784                  4.000             33.333         301.667
+pmu                  0.784                  4.000             33.333         313.333
+cyber_only           0.353                 26.000            216.667         565.000
+relay                0.353                 26.000            216.667         565.000
+control              0.000                    NaN                NaN             NaN
+snort                0.000                    NaN                NaN             NaN
+
+  PAIRWISE LEAD TIME (ms), positive = row view decides EARLIER
+  (computed only over events BOTH views eventually decide; a blank
+   cell means the two views never decided on the same event)
+            control  cyber_only      pmu    relay    snort
+control        0.00         NaN      NaN      NaN      NaN
+cyber_only      NaN        0.00  -116.67     0.00      NaN
+pmu             NaN      116.67     0.00   116.67      NaN
+relay           NaN        0.00  -116.67     0.00      NaN
+snort           NaN         NaN      NaN      NaN     0.00
+
+  EARLIEST-DECIDING MODALITY PER CLASS (this is the E2 result)
+    NoEvents   earliest = pmu      (  33.33 ms)   pmu=33ms
+    Natural    earliest = pmu      ( 475.00 ms)   pmu=475ms
+    Attack     earliest = pmu      (  25.00 ms)   cyber_only=217ms  pmu=25ms  relay=217ms
+
+  NOTE: ms figures assume 120 Hz (config.SAMPLE_RATE_HZ, marked CONFIRM).
+
+  [e2 finished in 38.8s]
+
+==============================================================================
+E3 MINIMAL FEATURE SET k*       -> conduit spec + bandwidth
+==============================================================================
+  full-feature macro-F1 (132 features): 0.5958
+    k=   1  macroF1=0.2774+/-0.0011  upstream=    0.5 KiB/s per bay
+    k=   2  macroF1=0.2784+/-0.0017  upstream=    0.9 KiB/s per bay
+    k=   3  macroF1=0.2945+/-0.0285  upstream=    1.4 KiB/s per bay
+    k=   5  macroF1=0.4072+/-0.0853  upstream=    2.3 KiB/s per bay
+    k=   8  macroF1=0.4928+/-0.0112  upstream=    3.8 KiB/s per bay
+    k=  12  macroF1=0.5431+/-0.0153  upstream=    5.6 KiB/s per bay
+    k=  16  macroF1=0.5608+/-0.0270  upstream=    7.5 KiB/s per bay
+    k=  20  macroF1=0.5999+/-0.0139  upstream=    9.4 KiB/s per bay  <== k*
+    k=  24  macroF1=0.5994+/-0.0186  upstream=   11.2 KiB/s per bay
+    k=  32  macroF1=0.6090+/-0.0087  upstream=   15.0 KiB/s per bay
+    k=  48  macroF1=0.5991+/-0.0139  upstream=   22.5 KiB/s per bay
+    k=  64  macroF1=0.5980+/-0.0095  upstream=   30.0 KiB/s per bay
+    k=  96  macroF1=0.5975+/-0.0095  upstream=   45.0 KiB/s per bay
+    k= 128  macroF1=0.5949+/-0.0033  upstream=   60.0 KiB/s per bay
+    k= 132  macroF1=0.5958+/-0.0063  upstream=   61.9 KiB/s per bay
+
+  k* = 20 features (within 0.01 macro-F1 of full)
+  H3 (<20 features) is NOT supported
+  bandwidth saving vs shipping everything: 84.8%
+
+  features chosen in ALL 5 folds: 13/20
+  -> only these belong in a conduit spec; fold-unstable features are
+     noise-selected and would not survive a different capture.
+      relay3_log
+      R3-PM12:I
+      R4-PM12:I
+      R4-PM2:V
+      R2-PM3:V
+      R3-PM2:V
+      relay2_log
+      R4-PM7:V
+      R3-PM1:V
+      R1-PM2:V
+      R3-PM3:V
+      R2-PA:ZH
+      R2:F
+
+  [e3 finished in 536.8s]
+
+==============================================================================
+DONE. Results written to /home/claude/run/outputs
+  e1: 2659.5s
+  e2: 38.8s
+  e3: 536.8s

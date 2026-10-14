@@ -1,0 +1,16 @@
+# Virtual environment (1.2 GB)
+.venv/
+__pycache__/
+*.pyc
+
+# Dataset (365 MB) - NOT redistributed here.
+# Provenance, schema and verification steps are documented in
+# dataset/PowerSystem/README.md; re-acquire from IMPACT Cyber Trust
+# (dataset 1290) or the GitHub mirror named in that README.
+dataset/
+
+# Derived cache - rebuilt by step1_profile.py in ~10s
+outputs/cache/
+
+# macOS
+.DS_Store
