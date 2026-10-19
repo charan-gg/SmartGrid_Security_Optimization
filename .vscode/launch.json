@@ -1,0 +1,52 @@
+{
+  // Run and Debug (Ctrl+Shift+D). Put a breakpoint in any file under src/ and press F5.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug the file I have open",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Debug step 4 (blocked-CV experiments)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/step4_run_experiments.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Debug step 6 (detector tiers)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/step6_train_detectors.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Debug step 8 (forward test), smoke settings",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/step8_forward_test.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": { "PP_OUTPUT_DIR": "outputs_smoke", "PP_MODELS_DIR": "models_smoke", "PP_N_SPLITS": "3", "PP_N_ESTIMATORS": "40", "PP_BOOTSTRAP_B": "60" }
+    },
+    {
+      "name": "Pipeline: smoke run",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_pipeline.py",
+      "args": ["--smoke"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

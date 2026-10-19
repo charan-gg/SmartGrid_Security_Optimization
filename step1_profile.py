@@ -1,9 +1,10 @@
 """
-STEP 1 - acquire + profile (Phase 0 verification).
+STEP 1 - profile the data and audit how independent Train.csv and Test.csv are.
 
-Purpose: replace every "recalled from literature" claim in the project brief
-with a measurement taken from the actual files, and fail loudly where the data
-does not match what the plan assumed. The output of this script IS Appendix A.
+Replaces every "recalled" claim about the dataset with a measurement, and fails loudly
+(src/data.py asserts T1-T4) if a different download does not match what the pipeline
+assumes. Writes outputs/step1_profile.json, which step 5 reads (merging units per row,
+message rate), and outputs/step1_column_health.csv.
 
 Run:  python step1_profile.py
 """
@@ -13,132 +14,90 @@ import numpy as np
 import pandas as pd
 
 from src import config as C
-from src.loading import load_dataset, META_COLUMNS
-from src.modalities import classify_column
+from src.data import META_COLUMNS, audit, load_published, rates
+from src.modalities import classify_column, n_units
 from src.splits import describe
 
 
 def main():
     print("=" * 78)
-    print("STEP 1 - DATASET PROFILE (Phase 0 verification)")
+    print("STEP 1 - DATASET PROFILE")
     print("=" * 78)
-
-    # load_dataset() asserts the three structural facts F1/F2/F3 on the way in;
-    # if any of them stopped holding, this call raises rather than returning
-    # quietly wrong data.
-    df, feature_cols, views = load_dataset(use_cache=False)
+    train, test, feature_cols = load_published()
     report = {}
 
-    # ---------------------------------------------------------------- shape
     print("\n[1] SHAPE")
-    report["n_rows"] = len(df)
+    report["n_rows_train"], report["n_rows_test"] = len(train), len(test)
     report["n_features"] = len(feature_cols)
-    print(f"  rows          : {len(df):,}")
-    print(f"  feature cols  : {len(feature_cols)}  (128 source + engineered)")
-    print(f"  meta cols     : {META_COLUMNS}")
+    print(f"  Train {len(train):,} rows, Test {len(test):,} rows, {len(feature_cols)} features "
+          f"(+ label and the `time` clock, which is metadata, never a feature)")
 
-    # ------------------------------------------------------------- labelling
-    print("\n[2] LABELS")
-    triple_counts = df["y_triple"].value_counts().to_dict()
-    report["triple_counts"] = {str(k): int(v) for k, v in triple_counts.items()}
-    for k, v in triple_counts.items():
-        print(f"  {k:<10} {v:>7,}  ({v / len(df):6.2%})")
-    print(f"  scenarios     : {df['scenario_id'].nunique()} distinct ids")
-    # Majority-class baseline. Every accuracy figure must be compared to this,
-    # which is exactly why the project reports macro-F1 instead.
-    majority = max(triple_counts.values()) / len(df)
-    report["majority_class_accuracy"] = float(majority)
-    print(f"  ** always-predict-majority accuracy = {majority:.4f} **")
-    print("     -> any 'accuracy' below this is worse than a constant. "
-          "Report macro-F1 and per-class recall only.")
+    print("\n[2] LABELS (Train.csv)")
+    counts = train[C.TARGET].value_counts().reindex(C.CLASS_ORDER)
+    report["class_counts"] = {k: int(v) for k, v in counts.items()}
+    for k, v in counts.items():
+        print(f"  {k:<11} {v:>5,}  ({v / len(train):6.2%})   family: {C.FAMILY[k]}")
+    maj = counts.max() / len(train)
+    report["majority_class_accuracy"] = float(maj)
+    print(f"  ** always-predict-Normal accuracy = {maj:.4f} **  -> nothing here reports bare accuracy;")
+    print("     macro-F1 and per-class recall are used (the three attacks together are "
+          f"{counts[C.ATTACK_CLASSES].sum() / len(train):.0%} of the rows).")
 
-    # ------------------------------------------------- event/group structure
-    print("\n[3] EVENT STRUCTURE  (the basis of every honest split)")
-    struct = describe(df)
-    report["structure"] = struct
-    print(f"  event instances (file x scenario) : {struct['n_events']}")
-    print(f"  rows per event  min/median/max    : "
-          f"{struct['rows_per_event_min']} / {struct['rows_per_event_median']} / "
-          f"{struct['rows_per_event_max']}")
-    print(f"  distinct scenarios                : {struct['n_scenarios']}")
-    print("  -> row order inside an event is TIME order; there is no timestamp")
-    print("     column, so E2 uses position-in-event as relative time.")
+    print("\n[3] THE CAPTURE")
+    r = rates(train)
+    report["rates"] = r
+    report["n_units"] = n_units(feature_cols)
+    print(f"  duration {r['duration_s']:.0f} s, {r['row_rate_hz']:.2f} messages/s on average "
+          f"(median gap {r['median_gap_ms']:.0f} ms, p95 gap {r['p95_gap_ms']:.0f} ms)")
+    print(f"  non-attack (Normal + Fault) rate {r['negative_rate_hz']:.2f}/s")
+    print(f"  one row spans {report['n_units']} merging units -> per-bay figures divide by "
+          f"{report['n_units']} (config.MEASURED_UNIT_IEDS overrides)")
+    d = describe(train)
+    report["blocks"] = d
+    print(f"  {d['n_blocks']} time blocks of {d['rows_per_block_min']}-{d['rows_per_block_max']} rows "
+          f"(median {d['rows_per_block_median']}); {d['blocks_containing_all_classes']} contain all "
+          f"{len(C.CLASS_ORDER)} classes")
 
-    # ----------------------------------------------------- per-column health
-    print("\n[4] PER-COLUMN HEALTH  (cardinality, missingness, constancy)")
+    print("\n[4] FEATURE HEALTH")
     rows = []
     for c in feature_cols:
-        s = df[c]
-        rows.append({
-            "column": c,
-            "modality": classify_column(c),
-            "n_unique": int(s.nunique(dropna=True)),
-            "n_nan": int(s.isna().sum()),
-            "pct_nan": float(s.isna().mean()),
-            "std": float(np.nanstd(s.to_numpy(dtype="float64"))),
-            # For the binary flag columns, this is the one number that matters:
-            # how many rows in the whole dataset ever see this flag set.
-            "n_nonzero": int((s.fillna(0) != 0).sum()),
-        })
+        s = train[c]
+        rows.append(dict(column=c, layer=classify_column(c), n_unique=int(s.nunique()),
+                         nonzero_rows=int((s != 0).sum()), min=float(s.min()), max=float(s.max()),
+                         constant=bool(s.nunique() == 1)))
     health = pd.DataFrame(rows)
     health.to_csv(C.OUTPUT_DIR / "step1_column_health.csv", index=False)
+    const = health.loc[health["constant"], "column"].tolist()
+    unknown = health.loc[health["layer"] == "unknown", "column"].tolist()
+    report["constant_columns"], report["unclassified_columns"] = const, unknown
+    print(f"  constant columns: {const or 'none'}")
+    print(f"  columns in no layer: {unknown or 'none'}")
+    print(health.groupby("layer").agg(columns=("column", "size"),
+                                      mean_unique=("n_unique", "mean")).round(1).to_string())
 
-    constant = health.loc[health["n_unique"] <= 1, "column"].tolist()
-    report["constant_columns"] = constant
-    print(f"  constant columns (zero information): {len(constant)}  {constant}")
-
-    # ----------------------------------- THE FINDING THAT RESHAPES E1
-    print("\n[5] MODALITY SIGNAL DENSITY  <-- read this before trusting E1")
-    print("  The thesis assumes four comparable evidence streams. Measure how")
-    print("  often each non-PMU flag is actually set across the whole dataset:")
-    dense = []
-    for mod in ("pmu", "relay", "snort", "control"):
-        cols = views[mod]
-        if not cols:
-            continue
-        nz = health.loc[health["modality"] == mod, "n_nonzero"].sum()
-        ever_set = int((df[cols].fillna(0) != 0).any(axis=1).sum())
-        frac = ever_set / len(df)
-        dense.append({"modality": mod, "n_columns": len(cols),
-                      "rows_with_any_signal": ever_set, "fraction": frac})
-        flag = ""
-        if mod != "pmu" and frac < 0.01:
-            flag = "  <-- DEGENERATE: cannot support a row-level classifier"
-        print(f"  {mod:<9} cols={len(cols):>4}  rows with any non-zero: "
-              f"{ever_set:>7,} ({frac:7.4%}){flag}")
-    report["modality_density"] = dense
-    pd.DataFrame(dense).to_csv(C.OUTPUT_DIR / "step1_modality_density.csv", index=False)
-
-    # -------------------------------------------------------- duplicate rows
-    print("\n[6] DUPLICATES")
-    dup = int(df[feature_cols].duplicated().sum())
-    report["duplicate_feature_rows"] = dup
-    print(f"  fully duplicated feature rows: {dup}")
-    print("  -> too few to matter, but they must not straddle a split; the")
-    print("     event-grouped splitter already prevents that.")
-
-    # ------------------------------------------------------------- config echo
-    print("\n[7] CHOICES IN EFFECT  (copy into Appendix A verbatim)")
-    choices = {
-        "target": C.TARGET,
-        "inf_policy": C.INF_POLICY,
-        "add_inf_indicators": C.ADD_INF_INDICATORS,
-        "group_key": C.GROUP_KEY,
-        "n_splits": C.N_SPLITS,
-        "random_seed": C.RANDOM_SEED,
-        "sample_rate_hz_CONFIRM": C.SAMPLE_RATE_HZ,
-        "benign_fraction_CONFIRM": C.BENIGN_FRACTION_REAL,
-        "model_params": C.MODEL_PARAMS,
-    }
-    report["choices"] = choices
-    for k, v in choices.items():
-        print(f"  {k:<28} {v}")
+    print("\n[5] HOW INDEPENDENT ARE Train.csv AND Test.csv?")
+    a = audit()
+    report["audit"] = a
+    print(f"  Test messages that are also in Train (same time and class): {a['test_messages_present_in_train']:.1%}")
+    print(f"  Test rows identical to a Train row in EVERY column          : {a['exact_duplicate_test_rows']:.1%}")
+    print(f"  class counts equal in both files                            : {a['class_counts_equal']}")
+    diff = a["columns_that_differ"]
+    same = a["columns_identical_in_both"]
+    print(f"  columns identical in both files: {len(same)} of {len(same) + len(diff)}; by layer "
+          f"{dict(pd.Series([classify_column(c) for c in same]).value_counts())}")
+    print(f"  columns that differ (fraction of rows): {diff}")
+    tr_c, te_c = a["timing_reproducible_from_rows"]["train"], a["timing_reproducible_from_rows"]["test"]
+    print(f"  timing columns reproducible from the rows' own order: Train {tr_c}  Test {te_c}")
+    print("\n  -> Test.csv is the SAME recording as Train.csv, not held-out data. Scoring a model")
+    print("     fitted on Train against Test measures memorisation (step 3 puts a number on it).")
+    print("     Every reported figure uses blocked time CV inside Train.csv.")
+    if min(tr_c.values()) > 0.9 and max(te_c.values()) < 0.9:
+        print("     Train's derived timing columns match its own stream; Test's do not, so they were computed on a")
+        print("     different stream. Train.csv is the one used for modelling.")
 
     with open(C.OUTPUT_DIR / "step1_profile.json", "w") as fh:
         json.dump(report, fh, indent=2, default=str)
-    print(f"\nwrote {C.OUTPUT_DIR/'step1_profile.json'}")
-    print(f"wrote {C.OUTPUT_DIR/'step1_column_health.csv'}")
-    print(f"wrote {C.OUTPUT_DIR/'step1_modality_density.csv'}")
+    print(f"\nwrote outputs/step1_profile.json, outputs/step1_column_health.csv")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,58 @@
+{
+  "naive": {
+    "overall": "NOT ESTABLISHED",
+    "reasons": [
+      "1 performance metric(s) are worse"
+    ],
+    "text": "vs naive: NOT ESTABLISHED. Security outcomes: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Security objectives: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Performance: 0 better / 2 tie / 1 worse / 0 inconclusive of 3. The optimized grid costs +37% more. Because: 1 performance metric(s) are worse."
+  },
+  "budget-matched": {
+    "overall": "NOT ESTABLISHED",
+    "reasons": [
+      "1 performance metric(s) are worse"
+    ],
+    "text": "vs budget-matched: NOT ESTABLISHED. Security outcomes: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Security objectives: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Performance: 0 better / 2 tie / 1 worse / 0 inconclusive of 3. The optimized grid costs about the same. Because: 1 performance metric(s) are worse."
+  },
+  "bm-lines+tiered": {
+    "overall": "OPTIMIZED BETTER (narrow)",
+    "reasons": [],
+    "text": "vs bm-lines+tiered: OPTIMIZED BETTER (narrow). Security outcomes: 1 better / 1 tie / 0 worse / 3 inconclusive of 5. Security objectives: 3 better / 2 tie / 0 worse / 0 inconclusive of 5. Performance: 0 better / 3 tie / 0 worse / 0 inconclusive of 3. The optimized grid costs about the same."
+  },
+  "self_check": {
+    "optimized vs ITSELF": {
+      "overall": "NOT ESTABLISHED",
+      "counts": {
+        "tie": 14
+      }
+    },
+    "roles SWAPPED (naive plays 'optimized')": {
+      "overall": "NOT ESTABLISHED",
+      "counts": {
+        "default better": 10,
+        "tie": 2,
+        "optimized better": 2
+      }
+    }
+  },
+  "inputs": {
+    "dataset": "fb3e4aae715163c5",
+    "operating_fpr": 0.01,
+    "recall_station": 0.5432022243335861,
+    "recall_fused": 0.5645467311961615,
+    "layouts": 90,
+    "sizes": [
+      20,
+      40,
+      80
+    ],
+    "seeds": 30,
+    "provenance_problems": []
+  },
+  "limits": [
+    "grids are simulated: synthetic layouts and standard test cases with schematic coordinates",
+    "N-1 is topological (connectivity), not a power-flow check",
+    "detector recall is per message and from one testbed substation; cross-substation fusion gain is not credited",
+    "attacks and failures are scenario sets, not a threat model",
+    "costs are relative kUSD assumptions (config.GRID_ASSUMPTIONS)"
+  ]
+}

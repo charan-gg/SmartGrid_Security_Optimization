@@ -1,0 +1,92 @@
+{
+  // Terminal > Run Task...   (or Ctrl+Shift+P > "Tasks: Run Task")
+  // Every task uses the interpreter VS Code has selected (bottom-right), so select .venv first.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Smoke run  (about 1 minute, checks everything runs, numbers NOT reportable)",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["run_pipeline.py", "--smoke"],
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "2. Full run  (train + test everything, about 5-8 minutes)",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["run_pipeline.py"],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "3. Train + test the model only  (steps 4, 6, 8)",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["run_pipeline.py", "--only", "4", "6", "8"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "4. Unit tests",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["-m", "unittest", "discover", "-s", "tests", "-v"],
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Watch the run in progress  (open a second terminal for this)",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["runs.py", "watch"],
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "List all runs",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["runs.py", "list"],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Show the latest run",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["runs.py", "show", "last"],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Compare the last two runs",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["runs.py", "diff", "prev", "last"],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Full run + log to MLflow  (needs: pip install mlflow)",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["run_pipeline.py", "--mlflow"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "MLflow dashboard  (http://127.0.0.1:5000)",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["-m", "mlflow", "ui", "--backend-store-uri", "sqlite:///mlflow.db"],
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+default,family,metrics,optimized_better,tie,default_better,inconclusive
+naive,performance,3,0,2,1,0
+naive,security-outcome,5,5,0,0,0
+naive,security-objective,5,5,0,0,0
+naive,price,1,0,0,1,0
+budget-matched,performance,3,0,2,1,0
+budget-matched,security-outcome,5,5,0,0,0
+budget-matched,security-objective,5,5,0,0,0
+budget-matched,price,1,0,1,0,0
+bm-lines+tiered,performance,3,0,3,0,0
+bm-lines+tiered,security-outcome,5,1,1,0,3
+bm-lines+tiered,security-objective,5,3,2,0,0
+bm-lines+tiered,price,1,0,1,0,0

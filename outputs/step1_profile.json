@@ -1,70 +1,115 @@
 {
-  "n_rows": 78377,
-  "n_features": 132,
-  "triple_counts": {
-    "Attack": 55663,
-    "Natural": 18309,
-    "NoEvents": 4405
+  "n_rows_train": 1094,
+  "n_rows_test": 1094,
+  "n_features": 52,
+  "class_counts": {
+    "Normal": 455,
+    "Fault": 41,
+    "Masquerade": 397,
+    "Injection": 101,
+    "Replay": 100
   },
-  "majority_class_accuracy": 0.7101955930949131,
-  "structure": {
-    "n_rows": 78377,
-    "n_events": 553,
-    "n_scenarios": 37,
-    "n_files": 15,
-    "rows_per_event_min": 13,
-    "rows_per_event_median": 123,
-    "rows_per_event_max": 514,
+  "majority_class_accuracy": 0.41590493601462525,
+  "rates": {
+    "duration_s": 476.962,
+    "row_rate_hz": 2.2936837735500943,
+    "negative_rate_hz": 1.0399151295071725,
+    "median_gap_ms": 371.0,
+    "p95_gap_ms": 1000.0
+  },
+  "n_units": 4,
+  "blocks": {
+    "n_rows": 1094,
+    "n_blocks": 20,
+    "rows_per_block_min": 30,
+    "rows_per_block_median": 60,
+    "rows_per_block_max": 79,
+    "blocks_containing_all_classes": 14,
     "class_counts": {
-      "Attack": 55663,
-      "Natural": 18309,
-      "NoEvents": 4405
+      "Normal": 455,
+      "Masquerade": 397,
+      "Injection": 101,
+      "Replay": 100,
+      "Fault": 41
     }
   },
-  "constant_columns": [],
-  "modality_density": [
-    {
-      "modality": "pmu",
-      "n_columns": 120,
-      "rows_with_any_signal": 78377,
-      "fraction": 1.0
-    },
-    {
-      "modality": "relay",
-      "n_columns": 4,
-      "rows_with_any_signal": 6266,
-      "fraction": 0.07994692320451152
-    },
-    {
-      "modality": "snort",
-      "n_columns": 4,
-      "rows_with_any_signal": 14,
-      "fraction": 0.00017862383097082052
-    },
-    {
-      "modality": "control",
-      "n_columns": 4,
-      "rows_with_any_signal": 5,
-      "fraction": 6.379422534672161e-05
-    }
+  "constant_columns": [
+    "MU3Cs"
   ],
-  "duplicate_feature_rows": 9,
-  "choices": {
-    "target": "y_triple",
-    "inf_policy": "nan",
-    "add_inf_indicators": true,
-    "group_key": "event_id",
-    "n_splits": 5,
-    "random_seed": 42,
-    "sample_rate_hz_CONFIRM": 120,
-    "benign_fraction_CONFIRM": 0.999,
-    "model_params": {
-      "n_estimators": 300,
-      "max_depth": 6,
-      "learning_rate": 0.1,
-      "subsample": 0.9,
-      "colsample_bytree": 0.9,
-      "reg_lambda": 1.0
+  "unclassified_columns": [],
+  "audit": {
+    "n_train": 1094,
+    "n_test": 1094,
+    "test_messages_present_in_train": 1.0,
+    "exact_duplicate_test_rows": 0.23308957952468007,
+    "class_counts_equal": true,
+    "columns_identical_in_both": [
+      "sqNum",
+      "stnum",
+      "state_cb",
+      "MU1Cs",
+      "MU2Cs",
+      "MU3Cs",
+      "MU4Cs",
+      "Cs",
+      "consistency",
+      "threePhaseVSum",
+      "threePhaseCSum",
+      "threePhaseVMU1",
+      "MU1VoltageAngleA",
+      "MU1VoltageAngleB",
+      "MU1VoltageAngleC",
+      "threePhaseCurrentMU1",
+      "MU1CurrentAngleA",
+      "MU1CurrentAngleB",
+      "MU1CurrentAngleC",
+      "MU1Log",
+      "threePhaseVMU2",
+      "MU2VoltageAngleA",
+      "MU2VoltageAngleB",
+      "MU2VoltageAngleC",
+      "threePhaseCMU2",
+      "MU2CurrentAngleA",
+      "MU2CurrentAngleB",
+      "MU2CurrentAngleC",
+      "MU2Log",
+      "threePhaseVMU3",
+      "MU3VoltageAngleA",
+      "MU3VoltageAngleB",
+      "MU3VoltageAngleC",
+      "threePhaseCMU3",
+      "MU3CurrentAngleA",
+      "MU3CurrentAngleB",
+      "MU3CurrentAngleC",
+      "MU3Log",
+      "threePhaseVMU4",
+      "MU4VoltageAngleA",
+      "MU4VoltageAngleB",
+      "MU4VoltageAngleC",
+      "threePhaseCMU4",
+      "IED4_iA",
+      "IED4_iB",
+      "IED4_iC",
+      "MU4Log",
+      "any_relay"
+    ],
+    "columns_that_differ": {
+      "timeLastMsg": 0.69,
+      "stDiff": 0.684,
+      "sqDiff": 0.648,
+      "recentChange": 0.559
+    },
+    "timing_reproducible_from_rows": {
+      "train": {
+        "timeLastMsg": 0.9725776965265083,
+        "sqDiff": 0.9725776965265083,
+        "stDiff": 0.9862888482632541
+      },
+      "test": {
+        "timeLastMsg": 0.30987202925045704,
+        "sqDiff": 0.35191956124314444,
+        "stDiff": 0.3153564899451554
+      }
     }
   }
 }

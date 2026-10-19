@@ -1,0 +1,5 @@
+level,role,count,model,features,p95_ms,load,sustainable_score_rate_hz,bytes_out_Bps,note
+L1 bay sentinel,bay sentinel,126,E4 tier1_edge_kstar,6,4.899,1% of 1 core @ 2.3 Hz,2.2936837735500943,13.8,per-sample scoring sustainable
+L2 station correlator,station correlator,40,E4 tier2_zone_fused,52,10.495,max 0.00 cores,,68.8,max over stations; forwards bay evidence to its hub
+L3 zone hub,zone hub,6,E4 tier3_widearea_fused,52,10.173,max 0.00 cores,,1321.2,max inbound 0.4 KB/s; one zone = one federated-training unit (E8)
+L4 control centre,control centre,1,E4 tier3_widearea_fused,52,10.173,digests only,,0.0,owns model updates (E8 transferability gap)

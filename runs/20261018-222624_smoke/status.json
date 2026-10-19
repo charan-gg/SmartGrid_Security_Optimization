@@ -1,0 +1,12 @@
+{
+  "run_id": "20261018-222624_smoke",
+  "state": "ok",
+  "n_steps": 9,
+  "step": "tests",
+  "step_index": 9,
+  "started": 1792342584.5910656,
+  "step_started": 1792342695.5377746,
+  "last_output": 1792342726.2621894,
+  "last_line": "Wrecking the test labels and features must not move the alert threshold. ... ok",
+  "finished": 1792342726.7356231
+}

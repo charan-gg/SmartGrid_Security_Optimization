@@ -1,0 +1,4 @@
+variant,connected,lines,bridges,cut_vertices,worst_node_outage_islanded,worst_line_outage_islanded,diameter_hops,mean_degree,cost_kusd,km
+radial (MST only),True,39,39,29,21,18,22,1.95,2343008.8,1562.0
+designed (N-1 secure),True,47,0,0,0,0,13,2.35,3047712.4,2031.8
+mesh (all candidate lines),True,142,0,0,0,0,6,7.1,13463147.6,8975.4

@@ -1,14 +1,18 @@
-# Core (already present in .venv)
 numpy>=2.0
 pandas>=2.2
 scikit-learn>=1.5
-scipy>=1.13
-pyarrow>=16            # parquet cache in src/loading.py
+scipy>=1.13          # exact PMU placement (milp) in src/design/observability.py
+xgboost>=2.0         # intended model; without it sklearn HistGradientBoosting is used (slower ranking)
+matplotlib>=3.8      # step-5 grid figure and step-7 scorecard only (--no-plot / --no-figure skip them)
+joblib>=1.3          # step 6 saves the fitted tier detectors (installed with scikit-learn)
 
-# Required for the intended model and for E7
-xgboost>=2.0
-shap>=0.45
+# Optional: cross-check of the hand-written graph routines in tests/test_graph.py
+# networkx>=3.0
 
-# Needed from step 6 onwards (replay harness), not by steps 1-4
-simpy>=4.1
-matplotlib>=3.8
+# Optional: regenerate dataset/grids/*.csv from the pandapower copies (tools/export_cases.py).
+# The CSVs are committed, so nothing needs this to run the project.
+# pandapower>=3.0
+
+# Optional: a browser dashboard for the runs (python run_pipeline.py --mlflow, then `python -m mlflow ui --backend-store-uri sqlite:///mlflow.db`).
+# The plain-file records in runs/ (python runs.py) work without it.
+# mlflow>=2.14

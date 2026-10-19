@@ -1,0 +1,64 @@
+{
+  "dataset": "fb3e4aae715163c5",
+  "backend": "xgboost",
+  "operating_fpr": 0.01,
+  "bootstrap_B": 300,
+  "seed": 42,
+  "n_messages": 1094,
+  "negative_rate_hz": 1.0399151295071725,
+  "sentinel_features": [
+    "consistency",
+    "state_cb",
+    "any_relay",
+    "Cs",
+    "stDiff",
+    "MU4Log"
+  ],
+  "tiers": [
+    {
+      "tier": "sentinel",
+      "threshold": 0.93839700659737,
+      "realised_fpr": 0.008064516129032258,
+      "coverage": 0.6246030875127815,
+      "recall_Masquerade": 0.9798488664987406,
+      "recall_Injection": 0.6039603960396039,
+      "recall_Replay": 0.29,
+      "coverage_lo": 0.5654646496758345,
+      "coverage_hi": 0.6904472613175134,
+      "coverage_sd": 0.03289022321250221
+    },
+    {
+      "tier": "station",
+      "threshold": 0.9867813601449599,
+      "realised_fpr": 0.008064516129032258,
+      "coverage": 0.5280553823644328,
+      "recall_Masquerade": 0.8690176322418136,
+      "recall_Injection": 0.48514851485148514,
+      "recall_Replay": 0.23,
+      "coverage_lo": 0.4879051030029634,
+      "coverage_hi": 0.6236683445933425,
+      "coverage_sd": 0.033033366218645395
+    },
+    {
+      "tier": "fused",
+      "threshold": 0.9749806508480107,
+      "realised_fpr": 0.008064516129032258,
+      "coverage": 0.5338667897016401,
+      "recall_Masquerade": 0.8866498740554156,
+      "recall_Injection": 0.504950495049505,
+      "recall_Replay": 0.21,
+      "coverage_lo": 0.49163275409712004,
+      "coverage_hi": 0.6583359758370837,
+      "coverage_sd": 0.04310159689732011
+    }
+  ],
+  "models": [
+    "models\\sentinel.joblib",
+    "models\\station.joblib",
+    "models\\fused.joblib"
+  ],
+  "limits": [
+    "recalls are per message, not per attack episode (the capture has none)",
+    "cross-substation fusion benefit is NOT measured here: one testbed substation"
+  ]
+}

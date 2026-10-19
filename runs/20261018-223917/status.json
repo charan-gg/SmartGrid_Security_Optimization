@@ -1,0 +1,12 @@
+{
+  "run_id": "20261018-223917",
+  "state": "failed",
+  "n_steps": 9,
+  "step": "tests",
+  "step_index": 9,
+  "started": 1792343357.6608078,
+  "step_started": 1792344057.404135,
+  "last_output": 1792344127.1830447,
+  "last_line": "Wrecking the test labels and features must not move the alert threshold. ... ok",
+  "finished": 1792344127.9889162
+}

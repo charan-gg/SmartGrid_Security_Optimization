@@ -1,16 +1,26 @@
-# Virtual environment (1.2 GB)
+# Virtual environment
 .venv/
 __pycache__/
 *.pyc
 
-# Dataset (365 MB) - NOT redistributed here.
-# Provenance, schema and verification steps are documented in
-# dataset/PowerSystem/README.md; re-acquire from IMPACT Cyber Trust
-# (dataset 1290) or the GitHub mirror named in that README.
-dataset/
+# Kaggle dataset (sequincozes/power-system-intrusion-dataset) - not redistributed here.
+# Download Train.csv and Test.csv into dataset/.   dataset/grids/ IS committed (small, derived).
+dataset/Train.csv
+dataset/Test.csv
+dataset/*.png
 
-# Derived cache - rebuilt by step1_profile.py in ~10s
-outputs/cache/
+# Fitted models are rebuilt by step6_train_detectors.py
+models/
 
 # macOS
 .DS_Store
+
+# Smoke-run results and models (never reportable) and the per-run bulky files.
+# runs/<id>/run.json, summary.md and status.json ARE worth committing: they are the experiment log.
+outputs_smoke/
+models_smoke/
+runs/*/*.log
+runs/*/outputs/
+runs/index.csv
+mlflow.db
+mlartifacts/

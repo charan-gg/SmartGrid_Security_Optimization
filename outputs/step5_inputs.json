@@ -1,0 +1,119 @@
+{
+  "dataset": "fb3e4aae715163c5",
+  "all_inputs_fresh": true,
+  "require_measured": true,
+  "problems": [],
+  "inputs": [
+    {
+      "name": "sample_rate_hz",
+      "value": 2.2936837735500943,
+      "provenance": "step1_profile.json"
+    },
+    {
+      "name": "bytes_per_feature",
+      "value": 4,
+      "provenance": "config"
+    },
+    {
+      "name": "ieds_per_unit",
+      "value": 4,
+      "provenance": "step1_profile.json"
+    },
+    {
+      "name": "n_features_full",
+      "value": 52,
+      "provenance": "e3_feature_budget.csv"
+    },
+    {
+      "name": "n_features_process",
+      "value": 32,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "k_stable",
+      "value": 6,
+      "provenance": "e3_feature_stability.csv"
+    },
+    {
+      "name": "k_stable_process",
+      "value": 0,
+      "provenance": "e3_feature_stability.csv"
+    },
+    {
+      "name": "edge_p50_ms",
+      "value": 3.7568499974440783,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "edge_p95_ms",
+      "value": 4.89906498696655,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "edge_batch_ms",
+      "value": 0.04908210936264368,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "station_p50_ms",
+      "value": 8.609099983004853,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "station_p95_ms",
+      "value": 10.495460047968663,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "station_batch_ms",
+      "value": 0.0867277343513706,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "wide_p50_ms",
+      "value": 8.67265000124462,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "wide_p95_ms",
+      "value": 10.173150032642297,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "wide_batch_ms",
+      "value": 0.08629292186014936,
+      "provenance": "e4_compute_profile.csv"
+    },
+    {
+      "name": "det_all",
+      "value": 0.5756825284709246,
+      "provenance": "e1_views_blocked.csv"
+    },
+    {
+      "name": "det_station",
+      "value": 0.5756825284709246,
+      "provenance": "e1_views_blocked.csv [capped: E1 station 0.615 > all 0.576, noise]"
+    },
+    {
+      "name": "det_process",
+      "value": 0.156292657532659,
+      "provenance": "e1_views_blocked.csv"
+    },
+    {
+      "name": "evidence_Bps_per_bay",
+      "value": 13.762102641300565,
+      "provenance": "derived"
+    },
+    {
+      "name": "raw_Bps_per_bay",
+      "value": 119.27155622460491,
+      "provenance": "derived"
+    },
+    {
+      "name": "process_Bps_per_bay",
+      "value": 73.39788075360302,
+      "provenance": "derived"
+    }
+  ],
+  "seed": 42
+}

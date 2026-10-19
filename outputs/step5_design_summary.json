@@ -1,0 +1,329 @@
+{
+  "summary": {
+    "seed": 42,
+    "n_substations": 40,
+    "n_bays": 126,
+    "power": {
+      "lines": 47,
+      "km": 2031.8,
+      "cost_kusd": 3047712.4,
+      "n1_premium_over_radial_pct": 30.1,
+      "cost_vs_mesh_pct": -77.4,
+      "lines_added_beyond_mst": 8,
+      "bridges": 0,
+      "cut_vertices": 0,
+      "diameter_hops": 13
+    },
+    "pmu": {
+      "k_fold": 1,
+      "n_pmus": 12,
+      "n_standard": 13,
+      "n_greedy": 13,
+      "method": "exact (scipy milp)",
+      "fraction_of_substations": 0.3,
+      "expected_detection": 0.5757,
+      "worst_after_single_pmu_loss": 0.5757
+    },
+    "hierarchy": {
+      "k_zones": 6,
+      "n_levels": 4,
+      "levels": [
+        "L1 bay sentinel",
+        "L2 station correlator",
+        "L3 zone hub",
+        "L4 control centre"
+      ],
+      "control_centre": 30,
+      "hubs": [
+        3,
+        16,
+        19,
+        21,
+        27,
+        38
+      ],
+      "binding_constraints": [
+        "zone_share"
+      ],
+      "headroom": {
+        "zone_share": "0.246 of cap 0.25",
+        "zone_hops": "3 of cap 4",
+        "latency_to_hub_verdict": "462.8 ms of 1000 ms",
+        "latency_to_cc_verdict": "475.6 ms of 10000 ms",
+        "hub_cores": "0.00 of cap 8",
+        "station_cores": "0.00 of cap 8"
+      },
+      "feasible": true
+    },
+    "costs": {
+      "power_lines": 3047712.4,
+      "comm_fibre": 30477.1,
+      "sensing_pmu": 480.0,
+      "sensing_sentinels": 630.0,
+      "compute_stations": 1200.0,
+      "compute_hubs": 720.0,
+      "compute_cc": 400.0,
+      "detection_plane": 3430.0,
+      "total": 3081619.6
+    },
+    "security": {
+      "backup_cc": 7,
+      "node": {
+        "central": {
+          "mean": 0.975,
+          "worst": 0.0,
+          "p10": 1.0
+        },
+        "central_backup": {
+          "mean": 1.0,
+          "worst": 1.0,
+          "p10": 1.0
+        },
+        "tiered_fused": {
+          "mean": 1.0,
+          "worst": 1.0,
+          "p10": 1.0
+        },
+        "tiered_any": {
+          "mean": 1.0,
+          "worst": 1.0,
+          "p10": 1.0
+        }
+      },
+      "region": {
+        "central": {
+          "mean": 0.894833546083546,
+          "worst": 0.0,
+          "p10": 0.9145299145299145
+        },
+        "central_backup": {
+          "mean": 0.9626645467270467,
+          "worst": 0.0,
+          "p10": 0.9523809523809523
+        },
+        "tiered_fused": {
+          "mean": 0.9855816746183719,
+          "worst": 0.8214285714285714,
+          "p10": 0.9523809523809523
+        },
+        "tiered_any": {
+          "mean": 1.0,
+          "worst": 1.0,
+          "p10": 1.0
+        }
+      },
+      "lateral": {
+        "flat": 1.0,
+        "zoned_mean": 0.1859126984126984,
+        "zoned_max": 0.24603174603174602
+      },
+      "diversity": {
+        "min_edge_disjoint_to_cc": 2,
+        "min_vertex_disjoint_to_cc": 2,
+        "min_vertex_disjoint_to_hub": 2
+      }
+    },
+    "gateways": {
+      "border_stations": [
+        0,
+        5,
+        10,
+        11,
+        13,
+        14,
+        15,
+        17,
+        20,
+        22,
+        23,
+        24,
+        25,
+        26,
+        30,
+        32,
+        37
+      ],
+      "edge_cut": 9,
+      "cut_fraction": 0.19148936170212766
+    }
+  },
+  "measured": {
+    "sample_rate_hz": [
+      2.2936837735500943,
+      "step1_profile.json"
+    ],
+    "bytes_per_feature": [
+      4,
+      "config"
+    ],
+    "ieds_per_unit": [
+      4,
+      "step1_profile.json"
+    ],
+    "n_features_full": [
+      52,
+      "e3_feature_budget.csv"
+    ],
+    "n_features_process": [
+      32,
+      "e4_compute_profile.csv"
+    ],
+    "k_stable": [
+      6,
+      "e3_feature_stability.csv"
+    ],
+    "k_stable_process": [
+      0,
+      "e3_feature_stability.csv"
+    ],
+    "edge_p50_ms": [
+      3.7568499974440783,
+      "e4_compute_profile.csv"
+    ],
+    "edge_p95_ms": [
+      4.89906498696655,
+      "e4_compute_profile.csv"
+    ],
+    "edge_batch_ms": [
+      0.04908210936264368,
+      "e4_compute_profile.csv"
+    ],
+    "station_p50_ms": [
+      8.609099983004853,
+      "e4_compute_profile.csv"
+    ],
+    "station_p95_ms": [
+      10.495460047968663,
+      "e4_compute_profile.csv"
+    ],
+    "station_batch_ms": [
+      0.0867277343513706,
+      "e4_compute_profile.csv"
+    ],
+    "wide_p50_ms": [
+      8.67265000124462,
+      "e4_compute_profile.csv"
+    ],
+    "wide_p95_ms": [
+      10.173150032642297,
+      "e4_compute_profile.csv"
+    ],
+    "wide_batch_ms": [
+      0.08629292186014936,
+      "e4_compute_profile.csv"
+    ],
+    "det_all": [
+      0.5756825284709246,
+      "e1_views_blocked.csv"
+    ],
+    "det_station": [
+      0.5756825284709246,
+      "e1_views_blocked.csv [capped: E1 station 0.615 > all 0.576, noise]"
+    ],
+    "det_process": [
+      0.156292657532659,
+      "e1_views_blocked.csv"
+    ],
+    "evidence_Bps_per_bay": [
+      13.762102641300565,
+      "derived"
+    ],
+    "raw_Bps_per_bay": [
+      119.27155622460491,
+      "derived"
+    ],
+    "process_Bps_per_bay": [
+      73.39788075360302,
+      "derived"
+    ]
+  },
+  "assumptions": {
+    "n_sites": 40,
+    "region_km": 300.0,
+    "frac_gen": 0.2,
+    "frac_junction": 0.2,
+    "line_kusd_per_km": 1500.0,
+    "candidate_knn": 6,
+    "n1_mode": "vertex",
+    "pmu_obs_k": 1,
+    "use_zib": true,
+    "pmu_kusd": 40.0,
+    "sentinel_kusd_per_bay": 5.0,
+    "station_correlator_kusd": 30.0,
+    "hub_kusd": 120.0,
+    "cc_kusd": 400.0,
+    "fibre_kusd_per_km": 15.0,
+    "fibre_us_per_km": 5.0,
+    "hop_ms": 0.1,
+    "lan_ms": 0.2,
+    "link_capacity_Bps": 12500000.0,
+    "verdict_bytes": 64,
+    "verdict_hz": 10.0,
+    "central_gateway_kusd_per_station": 0.0,
+    "max_zone_share": 0.25,
+    "max_zone_hops": 4,
+    "min_zone_stations": 3,
+    "max_cores_per_node": 8,
+    "util_cap": 0.7,
+    "zone_budget_ms": 1000.0,
+    "wide_budget_ms": 10000.0,
+    "hardware_slowdown": 1.0,
+    "failure_radius_km": 50.0,
+    "k_zone_max": 12,
+    "pam_restarts": 6
+  },
+  "zones": {
+    "3": [
+      0,
+      3,
+      8,
+      10,
+      35
+    ],
+    "16": [
+      6,
+      11,
+      16,
+      20,
+      31
+    ],
+    "19": [
+      5,
+      14,
+      15,
+      18,
+      19,
+      29,
+      33,
+      34,
+      39
+    ],
+    "21": [
+      21,
+      24,
+      28,
+      32
+    ],
+    "27": [
+      1,
+      4,
+      9,
+      23,
+      25,
+      27,
+      36,
+      37
+    ],
+    "38": [
+      2,
+      7,
+      12,
+      13,
+      17,
+      22,
+      26,
+      30,
+      38
+    ]
+  }
+}

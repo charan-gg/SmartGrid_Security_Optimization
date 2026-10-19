@@ -1,0 +1,774 @@
+run 20261018-223917   (full; results -> outputs/, record -> runs/20261018-223917/)
+
+=== [1/9] profile: -u step1_profile.py
+==============================================================================
+STEP 1 - DATASET PROFILE
+==============================================================================
+
+[1] SHAPE
+  Train 1,094 rows, Test 1,094 rows, 52 features (+ label and the `time` clock, which is metadata, never a feature)
+
+[2] LABELS (Train.csv)
+  Normal        455  (41.59%)   family: Normal
+  Fault          41  ( 3.75%)   family: Natural
+  Masquerade    397  (36.29%)   family: Attack
+  Injection     101  ( 9.23%)   family: Attack
+  Replay        100  ( 9.14%)   family: Attack
+  ** always-predict-Normal accuracy = 0.4159 **  -> nothing here reports bare accuracy;
+     macro-F1 and per-class recall are used (the three attacks together are 55% of the rows).
+
+[3] THE CAPTURE
+  duration 477 s, 2.29 messages/s on average (median gap 371 ms, p95 gap 1000 ms)
+  non-attack (Normal + Fault) rate 1.04/s
+  one row spans 4 merging units -> per-bay figures divide by 4 (config.MEASURED_UNIT_IEDS overrides)
+  20 time blocks of 30-79 rows (median 60); 14 contain all 5 classes
+
+[4] FEATURE HEALTH
+  constant columns: ['MU3Cs']
+  columns in no layer: none
+             columns  mean_unique
+layer                            
+consistency        8        166.6
+goose              7        102.6
+process           32        856.5
+relay              5          2.0
+
+[5] HOW INDEPENDENT ARE Train.csv AND Test.csv?
+  Test messages that are also in Train (same time and class): 100.0%
+  Test rows identical to a Train row in EVERY column          : 23.3%
+  class counts equal in both files                            : True
+  columns identical in both files: 48 of 52; by layer {'process': np.int64(32), 'consistency': np.int64(8), 'relay': np.int64(5), 'goose': np.int64(3)}
+  columns that differ (fraction of rows): {'timeLastMsg': 0.69, 'stDiff': 0.684, 'sqDiff': 0.648, 'recentChange': 0.559}
+  timing columns reproducible from the rows' own order: Train {'timeLastMsg': 0.9725776965265083, 'sqDiff': 0.9725776965265083, 'stDiff': 0.9862888482632541}  Test {'timeLastMsg': 0.30987202925045704, 'sqDiff': 0.35191956124314444, 'stDiff': 0.3153564899451554}
+
+  -> Test.csv is the SAME recording as Train.csv, not held-out data. Scoring a model
+     fitted on Train against Test measures memorisation (step 3 puts a number on it).
+     Every reported figure uses blocked time CV inside Train.csv.
+     Train's derived timing columns match its own stream; Test's do not, so they were computed on a
+     different stream. Train.csv is the one used for modelling.
+
+wrote outputs/step1_profile.json, outputs/step1_column_health.csv
+=== profile: ok in 2.5s  |  3 numbers recorded
+
+=== [2/9] views: -u step2_views.py
+==============================================================================
+STEP 2 - LAYER VIEWS
+==============================================================================
+
+[1] VIEW MEMBERSHIP
+  process       32 columns  e.g. threePhaseVMU1, MU1VoltageAngleA, MU1VoltageAngleB, MU1VoltageAngleC ...
+  goose          7 columns  e.g. sqNum, stnum, state_cb, sqDiff ...
+  consistency    8 columns  e.g. MU1Cs, MU2Cs, MU3Cs, MU4Cs ...
+  relay          5 columns  e.g. MU1Log, MU2Log, MU3Log, MU4Log ...
+  station       20 columns  e.g. sqNum, stnum, state_cb, sqDiff ...
+  all           52 columns  e.g. sqNum, stnum, state_cb, sqDiff ...
+
+[2] PER-CLASS PROFILE: share of rows where the column is non-zero / flagged
+            state_cb  recentChange  consistency    Cs  any_relay
+y_class                                                         
+Normal          0.00          0.59         0.98  0.02       0.00
+Fault           1.00          0.68         0.32  0.32       1.00
+Masquerade      0.91          0.71         0.06  0.05       0.09
+Injection       0.50          0.47         0.50  0.04       0.07
+Replay          0.12          0.39         0.84  0.04       0.09
+
+[3] PER-CLASS MEDIANS of the protocol timing columns
+            sqNum  stnum  sqDiff  stDiff  timeLastMsg
+y_class                                              
+Normal        9.0   39.0     1.0     0.0        619.0
+Fault         1.0   40.0    -4.0     1.0        293.0
+Masquerade    6.0   57.0    -1.0     1.0        289.0
+Injection    17.0   50.0     4.0     7.0        228.0
+Replay        6.0   39.0    -1.0    -3.0        311.5
+
+  Read these as hypotheses for E1: protocol-timing columns are where a forged or replayed
+  message should look different; MU angles describe the physics, which an attacker who
+  replays or forges GOOSE frames may leave untouched.
+=== views: ok in 0.6s
+
+=== [3/9] baselines: -u step3_split_and_baseline.py
+==============================================================================
+STEP 3 - EVALUATION PROTOCOLS   (backend: xgboost)
+==============================================================================
+
+[0] constant 'Normal' predictor: macro-F1 0.1175 (accuracy 0.4159)
+
+[1] MACRO-F1 BY PROTOCOL
+         shuffled_rows_cv  blocked_time_cv  blocked_sd  published_train_to_test  reverse_test_to_train
+all                0.7887           0.7144      0.0291                   0.9873                 0.4611
+station            0.8114           0.7230      0.0315                   0.9819                 0.4693
+process            0.2840           0.3081      0.0186                   1.0000                 1.0000
+
+[2] GAPS (how much each shortcut flatters the model)
+         memorisation_gap  published_inflation
+all               +0.0742              +0.2728
+station           +0.0884              +0.2589
+process           -0.0240              +0.6919
+
+[3] PER-CLASS RECALL, all features: honest vs published
+            blocked_time_cv  published_split
+Normal                0.882            1.000
+Fault                 0.943            1.000
+Masquerade            0.929            0.997
+Injection             0.396            1.000
+Replay                0.402            0.910
+
+[4] TEST MESSAGES WHOSE COLUMNS APPEAR VERBATIM IN Train.csv
+  process  100.0%
+  station  23.3%
+  all      23.3%
+  -> a model scored on Test sees messages it was fitted on; the MU-angle columns are
+     almost entirely identical, which is why a process-only model looks perfect there.
+
+  HEADLINE for the report: blocked time CV, all features: macro-F1 0.7144 +/- 0.0291.
+  The published split would have reported 0.9873.
+=== baselines: ok in 106.8s  |  9 numbers recorded
+
+=== [4/9] experiments: -u step4_run_experiments.py
+model backend : xgboost
+experiments   : e1, e3, e4, e6, e8
+loaded        : 1,094 rows, 52 features, 20 time blocks
+
+==============================================================================
+E1 VIEW ABLATION                -> which layer feeds the detector, is fusion needed
+==============================================================================
+  process                n= 32  macroF1=0.3081+/-0.0186  Norm=0.56  Faul=0.57  Masq=0.37  Inje=0.06  Repl=0.04
+  goose                  n=  7  macroF1=0.6288+/-0.0429  Norm=0.77  Faul=0.61  Masq=0.82  Inje=0.56  Repl=0.51
+  consistency            n=  8  macroF1=0.5033+/-0.0287  Norm=0.85  Faul=0.73  Masq=0.90  Inje=0.02  Repl=0.07
+  relay                  n=  5  macroF1=0.2531+/-0.0382  Norm=1.00  Faul=0.61  Masq=0.05  Inje=0.00  Repl=0.00
+  station                n= 20  macroF1=0.7230+/-0.0315  Norm=0.84  Faul=0.93  Masq=0.91  Inje=0.48  Repl=0.46
+  all                    n= 52  macroF1=0.7144+/-0.0291  Norm=0.88  Faul=0.94  Masq=0.93  Inje=0.40  Repl=0.40
+  control_time_only      n=  1  macroF1=0.1734+/-0.0369  Norm=0.15  Faul=0.00  Masq=0.97  Inje=0.00  Repl=0.11
+  control_counters_only  n=  2  macroF1=0.2285+/-0.0984  Norm=0.34  Faul=0.07  Masq=0.40  Inje=0.35  Repl=0.10
+
+  SAME CONTROLS UNDER SHUFFLED ROWS (what a random split would have shown)
+  control_time_only      shuffled macroF1=0.1581   blocked macroF1=0.1734
+  control_counters_only  shuffled macroF1=0.4105   blocked macroF1=0.2285
+
+  PER-CLASS WINNER AMONG SINGLE LAYERS
+    Normal      best single layer = relay        (1.000)   all features = 0.882
+    Fault       best single layer = consistency  (0.726)   all features = 0.943
+    Masquerade  best single layer = consistency  (0.905)   all features = 0.929
+    Injection   best single layer = goose        (0.556)   all features = 0.396
+    Replay      best single layer = goose        (0.508)   all features = 0.402
+
+  fusion gain over the best single layer : +0.0857  (fold SD of 'all' 0.0291)
+  phasor gain (all - station)            : -0.0085  (paired fold SD 0.0259)
+    -> adding the MU phasors to the station-bus evidence is within noise.
+
+  ATTACK COVERAGE (mean recall over Masquerade/Injection/Replay), the per-view
+  detection figure step 5 uses:
+    all       0.576
+    station   0.615
+    process   0.156
+
+  [e1 finished in 117.4s]
+
+==============================================================================
+E3 MINIMAL FEATURE SET k*       -> conduit spec + bandwidth
+==============================================================================
+  full-feature macro-F1 (52 features): 0.7098   message rate 2.29/s
+    k=  1  macroF1=0.3378+/-0.0066  upstream=    9.2 B/s per unit
+    k=  2  macroF1=0.4209+/-0.0404  upstream=   18.3 B/s per unit
+    k=  3  macroF1=0.5466+/-0.0107  upstream=   27.5 B/s per unit
+    k=  5  macroF1=0.5685+/-0.0490  upstream=   45.9 B/s per unit
+    k=  8  macroF1=0.7179+/-0.0207  upstream=   73.4 B/s per unit  <== k*
+    k= 12  macroF1=0.7380+/-0.0304  upstream=  110.1 B/s per unit
+    k= 16  macroF1=0.7298+/-0.0256  upstream=  146.8 B/s per unit
+    k= 20  macroF1=0.7194+/-0.0346  upstream=  183.5 B/s per unit
+    k= 24  macroF1=0.7317+/-0.0265  upstream=  220.2 B/s per unit
+    k= 32  macroF1=0.7134+/-0.0240  upstream=  293.6 B/s per unit
+    k= 40  macroF1=0.7173+/-0.0264  upstream=  367.0 B/s per unit
+    k= 52  macroF1=0.7098+/-0.0258  upstream=  477.1 B/s per unit
+
+  k* = 8 features (within 0.01 macro-F1 of full); bandwidth saving vs shipping everything: 84.6%
+  features chosen in ALL 5 folds: 6/8  by layer: {'consistency': 2, 'goose': 2, 'relay': 2}
+  -> only these belong in a conduit spec; fold-unstable features are noise-selected.
+      consistency            consistency
+      state_cb               goose
+      any_relay              relay
+      Cs                     consistency
+      stDiff                 goose
+      MU4Log                 relay
+
+  [e3 finished in 190.6s]
+
+==============================================================================
+E4 COMPUTE PROFILE              -> tier assignment
+==============================================================================
+  tier2_zone_fused         n= 52  p50= 8.609ms  p95=10.495ms  p99=11.049ms  size= 1805.9 KiB  budget=1000ms  OK
+  tier3_widearea_fused     n= 52  p50= 8.673ms  p95=10.173ms  p99=10.718ms  size= 1805.9 KiB  budget=10000ms  OK
+  tier1_edge_kstar         n=  6  p50= 3.757ms  p95= 4.899ms  p99= 5.382ms  size= 2182.1 KiB  budget=100ms  OK
+  tier1_edge_process_only  n= 32  p50= 3.548ms  p95= 7.023ms  p99=13.884ms  size= 2598.8 KiB  budget=100ms  OK
+
+  backend: xgboost   cpu: Intel64 Family 6 Model 186 Stepping 2, GenuineIntel   python 3.14.7
+  Measured on THIS machine, not substation hardware. Quote the RATIO between tiers as
+  the durable finding and re-run on the machine you cite.
+
+  [e4 finished in 21.6s]
+
+==============================================================================
+E6 OPERATING POINT              -> alarm budget
+==============================================================================
+  out-of-fold scores for 1,094 messages (attack 598 / other 496), view 'all'
+  measured non-attack rate 1.04 msg/s -> 89,849 per day per unit
+
+  RESOLUTION FLOOR: 496 negatives => one false positive = 181 alerts/day.
+  A budget below that is 'no false positive observed', an upper bound set by the size
+  of the capture, not a measured rate. Report E6 as a CURVE plus this floor.
+
+  ATTACK RECALL PURCHASABLE AT EACH ALARM BUDGET
+    <=     100 alerts/day : threshold=0.991  recall=0.632  precision=1.000   [below floor: upper bound only]
+    <=     500 alerts/day : threshold=0.983  recall=0.681  precision=0.995
+    <=   2,000 alerts/day : threshold=0.931  recall=0.783  precision=0.977
+    <=  10,000 alerts/day : threshold=0.534  recall=0.888  precision=0.908
+
+  -> the chosen threshold is a CONFIGURATION CONSTANT of the tier spec. A per-message
+     alarm also needs a hold-down rule: one attack spans many messages.
+
+  [e6 finished in 7.1s]
+
+==============================================================================
+E8 UNSEEN ATTACK TYPE           -> central vs per-site training
+==============================================================================
+  all      Masquerade  @FPR<=5%: seen=0.950  unseen=0.305  gap=+0.645   (own 0.5 cut: 0.987/0.720, fpr 0.192/0.171)
+  all      Injection   @FPR<=5%: seen=0.594  unseen=0.525  gap=+0.069   (own 0.5 cut: 0.812/0.554, fpr 0.192/0.111)
+  all      Replay      @FPR<=5%: seen=0.350  unseen=0.190  gap=+0.160   (own 0.5 cut: 0.670/0.200, fpr 0.192/0.054)
+  station  Masquerade  @FPR<=5%: seen=0.914  unseen=0.259  gap=+0.655   (own 0.5 cut: 0.990/0.746, fpr 0.226/0.202)
+  station  Injection   @FPR<=5%: seen=0.535  unseen=0.505  gap=+0.030   (own 0.5 cut: 0.832/0.554, fpr 0.226/0.123)
+  station  Replay      @FPR<=5%: seen=0.260  unseen=0.220  gap=+0.040   (own 0.5 cut: 0.690/0.220, fpr 0.226/0.054)
+  process  Masquerade  @FPR<=5%: seen=0.058  unseen=0.058  gap=+0.000   (own 0.5 cut: 0.582/0.214, fpr 0.528/0.192)
+  process  Injection   @FPR<=5%: seen=0.059  unseen=0.040  gap=+0.020   (own 0.5 cut: 0.554/0.455, fpr 0.528/0.458)
+  process  Replay      @FPR<=5%: seen=0.060  unseen=0.050  gap=+0.010   (own 0.5 cut: 0.610/0.530, fpr 0.528/0.462)
+
+  mean transferability gap, all features: +0.291  (worst: Masquerade +0.645)
+  -> LARGE. A model trained without an attack type misses it. Sites need to train on
+     their own traffic (or federate), and Tier 3 should own model updates.
+
+  [e8 finished in 38.7s]
+
+==============================================================================
+DONE. Results written to C:\Users\ggcha\Documents\predictive_analytics\predictive_project\outputs
+  e1: 117.4s
+  e3: 190.6s
+  e4: 21.6s
+  e6: 7.1s
+  e8: 38.7s
+=== experiments: ok in 377.9s  |  37 numbers recorded
+
+=== [5/9] design: -u step5_design_grid.py --require-measured
+
+==============================================================================
+INPUTS - what was measured vs what is assumed
+==============================================================================
+  name                  value    source                                                            
+  sample_rate_hz        2.294    step1_profile.json                                                
+  bytes_per_feature     4        config                                                            
+  ieds_per_unit         4        step1_profile.json                                                
+  n_features_full       52       e3_feature_budget.csv                                             
+  n_features_process    32       e4_compute_profile.csv                                            
+  k_stable              6        e3_feature_stability.csv                                          
+  k_stable_process      0        e3_feature_stability.csv                                          
+  edge_p50_ms           3.757    e4_compute_profile.csv                                            
+  edge_p95_ms           4.899    e4_compute_profile.csv                                            
+  edge_batch_ms         0.04908  e4_compute_profile.csv                                            
+  station_p50_ms        8.609    e4_compute_profile.csv                                            
+  station_p95_ms        10.5     e4_compute_profile.csv                                            
+  station_batch_ms      0.08673  e4_compute_profile.csv                                            
+  wide_p50_ms           8.673    e4_compute_profile.csv                                            
+  wide_p95_ms           10.17    e4_compute_profile.csv                                            
+  wide_batch_ms         0.08629  e4_compute_profile.csv                                            
+  det_all               0.5757   e1_views_blocked.csv                                              
+  det_station           0.5757   e1_views_blocked.csv [capped: E1 station 0.615 > all 0.576, noise]
+  det_process           0.1563   e1_views_blocked.csv                                              
+  evidence_Bps_per_bay  13.76    derived                                                           
+  raw_Bps_per_bay       119.3    derived                                                           
+  process_Bps_per_bay   73.4     derived                                                           
+
+  dataset fingerprint (Train.csv + Test.csv): fb3e4aae715163c5
+
+  Assumptions (config.GRID_ASSUMPTIONS) - NOT measured, relative kUSD:
+   n_sites=40, region_km=300.0, frac_gen=0.2, frac_junction=0.2, line_kusd_per_km=1500.0, candidate_knn=6, n1_mode=vertex, pmu_obs_k=1, use_zib=True, pmu_kusd=40.0, sentinel_kusd_per_bay=5.0, station_correlator_kusd=30.0, hub_kusd=120.0, cc_kusd=400.0, fibre_kusd_per_km=15.0, fibre_us_per_km=5.0, hop_ms=0.1, lan_ms=0.2, link_capacity_Bps=12500000.0,verdict_bytes=64, verdict_hz=10.0, central_gateway_kusd_per_station=0.0, max_zone_share=0.25, max_zone_hops=4, min_zone_stations=3, max_cores_per_node=8, util_cap=0.7, zone_budget_ms=1000.0, wide_budget_ms=10000.0, hardware_slowdown=1.0, failure_radius_km=50.0, k_zone_max=12, pam_restarts=6
+
+==============================================================================
+A  PHYSICAL NETWORK -> Kruskal MST + N-1 augmentation
+==============================================================================
+  40 substations, 126 bays (line terminals + generator/load ties)
+
+  variant                     lines  km      cost_kusd   bridges  cut_vertices  worst_node_loss_islands  diameter_hops
+  radial (MST only)           39     1562.0  2343008.8   39       29            21                       22           
+  designed (N-1 secure)       47     2031.8  3047712.4   0        0             0                        13           
+  mesh (all candidate lines)  142    8975.4  13463147.6  0        0             0                        6            
+
+  -> N-1 security costs +30.1% over the radial MST (8 extra lines) and is 77.4% cheaper than building every candidate line.
+     N-1 is TOPOLOGICAL (grid stays connected); line capacity under rerouting is not checked.
+
+==============================================================================
+B  PMU PLACEMENT -> minimum dominating set
+==============================================================================
+  1-fold observability of 40 substations
+  standard rule : 13 PMUs   (exact (scipy milp))
+  greedy        : 13 PMUs   (optimality gap 0)
+  + zero-inject.: 12 PMUs   = 30% of substations (PMU-everywhere baseline: 40)
+  E1-weighted expected attack coverage: 0.576 intact, 0.576 after the worst single-PMU loss
+  E1 coverage: station bus alone 0.576, + MU phasors 0.576, phasors alone 0.156: sensor placement buys little detection
+
+  !! E1 was measured on a testbed with every merging unit present. Whether detection holds
+     on buses observed only by inference is NOT in the data (see observability.py).
+
+==============================================================================
+C  HIERARCHY -> k-medoid zoning, smallest feasible k
+==============================================================================
+  k   feasible  max_share  stations_min_max  max_hops  t_hub_ms  hub_cores  violations          
+  1   False     1.0        40-40             9         464.376   0.009      zone_share,zone_hops
+  2   False     0.5952     16-24             6         463.486   0.005      zone_share,zone_hops
+  3   False     0.3492     13-14             5         463.148   0.003      zone_share,zone_hops
+  4   False     0.3016     7-12              4         462.969   0.003      zone_share          
+  5   False     0.254      5-10              3         462.791   0.002      zone_share          
+  6   True      0.246      4-9               3         462.791   0.002      none                
+  7   True      0.2063     3-8               2         462.662   0.002      none                
+  8   True      0.1905     3-7               2         462.662   0.002      none                
+  9   True      0.1429     3-6               2         462.461   0.001      none                
+  10  True      0.1349     3-5               2         462.321   0.001      none                
+  11  True      0.1349     3-5               2         462.329   0.001      none                
+  12  False     0.119      1-5               2         462.312   0.001      zone_min_size       
+
+  -> 6 zone hub(s) => 4 levels: L1 bay sentinel > L2 station correlator > L3 zone hub > L4 control centre
+     hubs at substations [3, 16, 19, 21, 27, 38], control centre at 30
+     forced by: zone_share
+     slack at the chosen design:
+       zone_share               0.246 of cap 0.25
+       zone_hops                3 of cap 4
+       latency_to_hub_verdict   462.8 ms of 1000 ms
+       latency_to_cc_verdict    475.6 ms of 10000 ms
+       hub_cores                0.00 of cap 8
+       station_cores            0.00 of cap 8
+
+==============================================================================
+D  STRESS TESTS -> BFS failure sweeps, lateral movement, max-flow
+==============================================================================
+  share of surviving bays that still reach a fusion point:
+  single-substation loss (every substation in turn)
+    centralised, one CC                          mean 0.975   worst 0.000
+    centralised + backup CC (site 7)             mean 1.000   worst 1.000
+    tiered, hub/CC-level fusion                  mean 1.000   worst 1.000
+  regional outage (50 km disc around every substation)
+    centralised, one CC                          mean 0.895   worst 0.000
+    centralised + backup CC (site 7)             mean 0.963   worst 0.000
+    tiered, hub/CC-level fusion                  mean 0.986   worst 0.821
+  (tiered 'any-level' coverage is 1.0 by architecture: each station keeps its own
+   correlator. Accuracy of station-only fusion is what E5 measures.)
+
+  lateral movement from one compromised substation: flat network reaches 100% of bays;
+    zoned reaches 18.6% on average (worst 24.6%)
+  inter-zone links (authenticated crossings, rule R6): 9 of 47 (19%);  border gateway stations: 17
+  independent routes to the CC (Menger): min 2 edge-disjoint, min 2 vertex-disjoint
+
+==============================================================================
+E  DEPLOYMENT COMPARISON -> same grid, different place for detection
+==============================================================================
+  deployment                   cc_ingress_KBps  peak_link_KBps  peak_link_util  max_node_cores  worst_bay_to_verdict_ms  blast_share  single_node_loss_coverage_worst  regional_loss_coverage_worst  attack_coverage_intact
+  A physical-only centralised  9.0              4.6             0.0004          0.009           448.96                   1.0          0.0                              0.0                     0.156                 
+  B centralised fusion (raw)   14.6             7.4             0.0006          0.009           448.96                   1.0          0.0                              0.0                     0.576                 
+  B+ B with backup CC          27.9             14.3            0.0011          0.009           448.96                   1.0          1.0                              0.0                     0.576                 
+  C tiered (this design)       6.0              2.7             0.0002          0.002           462.79                   0.246        1.0                              0.8214                     0.576                 
+
+  -> link load is NOT binding: even raw centralised fusion peaks at 0.06% of a corridor link at the measured 2.3 rows/s per station.
+     What tiering buys is blast radius: one fusion node serves at most 25% of bays (centralised: 100%), and the worst single-node loss keeps 100% of bays covered (centralised,one CC: 0%).
+     Pipeline latency is NOT where tiering wins: centralised 448.96 ms vs tiered 462.79 ms (one row period is 436 ms of that; see --sensitivity).
+     Detection (E1 attack coverage): fused layers 0.576, station bus alone 0.576, phasors alone 0.156. A physical-only design keeps 0.156; B and C use the same inputs, so C ~=B on accuracy.
+
+==============================================================================
+F  ROLE -> MODEL MAP (roles read off the designed graph)
+==============================================================================
+  level                  role                count  model                    features  p95_ms  load                   bytes_out_Bps  note                      
+  L1 bay sentinel        bay sentinel        126    E4 tier1_edge_kstar      6         4.899   1% of 1 core @ 2.3 Hz  13.8           per-sample scoring sustainable                      
+  L2 station correlator  station correlator  40     E4 tier2_zone_fused      52        10.495  max 0.00 cores         68.8           max over stations; forwards bay evidence to its hub              
+  L3 zone hub            zone hub            6      E4 tier3_widearea_fused  52        10.173  max 0.00 cores         1321.2         max inbound 0.4 KB/s; one zone = one federated-training unit (E8)
+  L4 control centre      control centre      1      E4 tier3_widearea_fused  52        10.173  digests only           0.0            owns model updates (E8 transferability gap)                      
+
+==============================================================================
+G  COST ACCOUNTS (relative kUSD, ASSUMED unit costs)
+==============================================================================
+  power_lines             3,047,712.4
+  comm_fibre                 30,477.1
+  sensing_pmu                   480.0
+  sensing_sentinels             630.0
+  compute_stations            1,200.0
+  compute_hubs                  720.0
+  compute_cc                    400.0
+  detection_plane             3,430.0
+  total                   3,081,619.6
+  detection plane (sensing + compute, fibre excluded: it is shared with SCADA) = 0.11% of the line cost
+
+DONE in 14.9s. Outputs: outputs/step5_*
+=== design: ok in 15.3s  |  6 numbers recorded
+
+=== [6/9] detectors: -u step6_train_detectors.py
+backend xgboost | 1,094 messages | operating FPR 1% of non-attack | block bootstrap B=300 over 20 time blocks
+  sentinel   6 features  ['consistency', 'state_cb', 'any_relay', 'Cs', 'stDiff', 'MU4Log']
+  station   20 features
+  fused     52 features
+
+  tier       thr      real.FPR  false/day/unit  coverage [95% block-bootstrap]   Mas    Inj    Rep
+  sentinel  0.938   0.0081         725      0.625  [0.565, 0.690]      0.98   0.60   0.29
+  station   0.987   0.0081         725      0.528  [0.488, 0.624]      0.87   0.49   0.23
+  fused     0.975   0.0081         725      0.534  [0.492, 0.658]      0.89   0.50   0.21
+
+  paired bootstrap differences in coverage (same block resamples):
+     station - sentinel  -0.083  [-0.164, +0.006]  -> NOT distinguishable from zero
+       fused - station   +0.013  [-0.040, +0.088]  -> NOT distinguishable from zero
+
+  final models (fitted on all of Train.csv) -> models\sentinel.joblib, models\station.joblib, models\fused.joblib
+  their threshold comes from the OUT-OF-FOLD scores; a model fitted on more data is a
+  little more confident, so re-check false alerts on a fresh capture before deploying.
+=== detectors: ok in 18.6s  |  9 numbers recorded
+
+=== [7/9] compare: -u step7_compare_grids.py --require-measured
+====================================================================================================
+DEFAULT vs OPTIMIZED SMART GRID
+====================================================================================================
+  detector recall (MEASURED, step 6, FPR budget 1%): station 0.543, fused 0.565  (300 block-bootstrap replicates)
+  layouts (SIMULATED): synthetic sites, sizes [20, 40, 80] x 30 seeds
+  per metric : 'better'/'worse' only if the whole 95% interval of (optimized - default) is beyond the tolerance;
+               'tie' if the whole interval is inside +-tolerance; otherwise 'inconclusive'
+  per family : counts of those outcomes; price is never netted against security
+  security   : OBJECTIVES (what the algorithms minimise: bridges, zone share, routes) show the algorithm worked;
+               OUTCOMES (attack detection that survives a failure) are what was never optimised
+  overall    : OPTIMIZED BETTER needs >=1 security OUTCOME win, 0 security losses, 0 performance losses
+               ('narrow' unless most outcome metrics are clear wins); otherwise NOT ESTABLISHED + reasons
+  90 layouts evaluated in 94s
+
+  OPTIMIZED vs NAIVE
+              metric                                                           optimized   default     diff   95% interval        outcome
+  performance attack coverage, nothing failed                                      0.565     0.565   +0.000   [+0.000, +0.000]    tie
+  performance worst bay -> first fused verdict (ms)                                462.7     451.3  +11.412   [+10.999, +11.805]  default better
+  performance busiest link, share of capacity                                     0.0003    0.0011   -0.001   [-0.001, -0.001]    tie
+  SEC-OUTCOME coverage delivered, any one substation lost                          0.564     0.450   +0.114   [+0.100, +0.133]    optimized better
+  SEC-OUTCOME coverage delivered, 50 km regional outage                            0.556     0.389   +0.167   [+0.147, +0.193]    optimized better
+  SEC-OUTCOME coverage delivered, random 2-substation loss                         0.559     0.364   +0.195   [+0.173, +0.227]    optimized better
+  SEC-OUTCOME coverage delivered, targeted 2-substation loss (adversary)           0.533     0.118   +0.415   [+0.368, +0.479]    optimized better
+  SEC-OUTCOME coverage delivered, worst scenario of all                            0.440     0.000   +0.440   [+0.393, +0.511]    optimized better
+  sec-objectivesingle points of failure in the power network (bridges + cut v         0.0      79.3  -79.278   [-88.311, -70.544]  optimized better
+  sec-objectiveworst one-substation loss: share of the rest cut off                 0.000     0.520   -0.520   [-0.528, -0.512]    optimized better
+  sec-objectiveshare of bays one compromised hub exposes                            0.225     1.000   -0.775   [-0.783, -0.767]    optimized better
+  sec-objectiveshare of bays an intruder can reach laterally                        0.179     1.000   -0.821   [-0.827, -0.814]    optimized better
+  sec-objectivefewest independent routes any substation has to a control cent         2.0       1.0   +1.000   [+1.000, +1.000]    optimized better
+  sec-second. (secondary) coverage if local detection counts, regional outag       0.564     0.389   +0.175   [+0.155, +0.202]    optimized better
+  sec-second. (secondary) coverage if local detection counts, worst scenario       0.560     0.000   +0.560   [+0.502, +0.645]    optimized better
+  price       total cost (kUSD): lines + fibre + sensors + compute                3,616k    2,698k   +36.9%   [+35.3%, +38.8%]    default better
+  info        (info) control-centre ingress, KB/s                                    7.0      15.0   -8.000   [-8.937, -7.085]    info
+  info        (info) cores on the busiest node                                    0.0022    0.0091   -0.007   [-0.008, -0.006]    info
+  info        (info) PMUs installed                                                 13.1      46.7  -33.544   [-37.244, -29.977]  info
+
+  => vs naive: NOT ESTABLISHED. Security outcomes: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Security objectives: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Performance: 0 better / 2 tie / 1 worse / 0 inconclusive of 3. The optimized grid costs +37% more. Because: 1 performance metric(s) are worse.
+
+  OPTIMIZED vs BUDGET-MATCHED
+              metric                                                           optimized   default     diff   95% interval        outcome
+  performance attack coverage, nothing failed                                      0.565     0.565   +0.000   [+0.000, +0.000]    tie
+  performance worst bay -> first fused verdict (ms)                                462.7     450.7  +11.991   [+11.605, +12.342]  default better
+  performance busiest link, share of capacity                                     0.0003    0.0014   -0.001   [-0.001, -0.001]    tie
+  SEC-OUTCOME coverage delivered, any one substation lost                          0.564     0.534   +0.030   [+0.026, +0.035]    optimized better
+  SEC-OUTCOME coverage delivered, 50 km regional outage                            0.556     0.487   +0.069   [+0.060, +0.080]    optimized better
+  SEC-OUTCOME coverage delivered, random 2-substation loss                         0.559     0.503   +0.056   [+0.048, +0.065]    optimized better
+  SEC-OUTCOME coverage delivered, targeted 2-substation loss (adversary)           0.533     0.357   +0.175   [+0.153, +0.207]    optimized better
+  SEC-OUTCOME coverage delivered, worst scenario of all                            0.440     0.000   +0.440   [+0.393, +0.511]    optimized better
+  sec-objectivesingle points of failure in the power network (bridges + cut v         0.0      48.3  -48.322   [-54.412, -42.555]  optimized better
+  sec-objectiveworst one-substation loss: share of the rest cut off                 0.000     0.413   -0.413   [-0.435, -0.389]    optimized better
+  sec-objectiveshare of bays one compromised hub exposes                            0.225     1.000   -0.775   [-0.783, -0.767]    optimized better
+  sec-objectiveshare of bays an intruder can reach laterally                        0.179     1.000   -0.821   [-0.827, -0.814]    optimized better
+  sec-objectivefewest independent routes any substation has to a control cent         2.0       1.0   +1.000   [+1.000, +1.000]    optimized better
+  sec-second. (secondary) coverage if local detection counts, regional outag       0.564     0.487   +0.077   [+0.068, +0.090]    optimized better
+  sec-second. (secondary) coverage if local detection counts, worst scenario       0.560     0.000   +0.560   [+0.502, +0.645]    optimized better
+  price       total cost (kUSD): lines + fibre + sensors + compute                3,616k    3,580k    +1.4%   [+1.1%, +1.7%]      tie
+  info        (info) control-centre ingress, KB/s                                    7.0      21.5  -14.472   [-16.384, -12.780]  info
+  info        (info) cores on the busiest node                                    0.0022    0.0110   -0.009   [-0.010, -0.008]    info
+  info        (info) PMUs installed                                                 13.1      46.7  -33.544   [-37.244, -29.977]  info
+
+  => vs budget-matched: NOT ESTABLISHED. Security outcomes: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Security objectives: 5 better / 0 tie / 0 worse / 0 inconclusive of 5. Performance: 0 better / 2 tie / 1 worse / 0 inconclusive of 3. The optimized grid costs about the same. Because: 1 performance metric(s) are worse.
+
+  OPTIMIZED vs BM-LINES+TIERED
+              metric                                                           optimized   default     diff   95% interval        outcome
+  performance attack coverage, nothing failed                                      0.565     0.565   +0.000   [+0.000, +0.000]    tie
+  performance worst bay -> first fused verdict (ms)                                462.7     462.7   +0.016   [-0.025, +0.056]    tie
+  performance busiest link, share of capacity                                     0.0003    0.0003   +0.000   [-0.000, +0.000]    tie
+  SEC-OUTCOME coverage delivered, any one substation lost                          0.564     0.558   +0.007   [+0.006, +0.008]    tie
+  SEC-OUTCOME coverage delivered, 50 km regional outage                            0.556     0.546   +0.010   [+0.008, +0.012]    inconclusive
+  SEC-OUTCOME coverage delivered, random 2-substation loss                         0.559     0.549   +0.010   [+0.008, +0.011]    inconclusive
+  SEC-OUTCOME coverage delivered, targeted 2-substation loss (adversary)           0.533     0.504   +0.029   [+0.025, +0.034]    optimized better
+  SEC-OUTCOME coverage delivered, worst scenario of all                            0.440     0.427   +0.013   [+0.006, +0.021]    inconclusive
+  sec-objectivesingle points of failure in the power network (bridges + cut v         0.0      48.3  -48.322   [-54.412, -42.555]  optimized better
+  sec-objectiveworst one-substation loss: share of the rest cut off                 0.000     0.413   -0.413   [-0.435, -0.389]    optimized better
+  sec-objectiveshare of bays one compromised hub exposes                            0.225     0.222   +0.004   [-0.006, +0.012]    tie
+  sec-objectiveshare of bays an intruder can reach laterally                        0.179     0.166   +0.013   [+0.006, +0.019]    tie
+  sec-objectivefewest independent routes any substation has to a control cent         2.0       1.0   +1.000   [+1.000, +1.000]    optimized better
+  sec-second. (secondary) coverage if local detection counts, regional outag       0.564     0.564   +0.000   [-0.000, +0.000]    tie
+  sec-second. (secondary) coverage if local detection counts, worst scenario       0.560     0.560   +0.001   [-0.000, +0.003]    tie
+  price       total cost (kUSD): lines + fibre + sensors + compute                3,616k    3,581k    +1.4%   [+1.1%, +1.6%]      tie
+  info        (info) control-centre ingress, KB/s                                    7.0       7.0   +0.023   [+0.002, +0.045]    info
+  info        (info) cores on the busiest node                                    0.0022    0.0022   -0.000   [-0.000, +0.000]    info
+  info        (info) PMUs installed                                                 13.1      12.8   +0.356   [+0.133, +0.589]    info
+
+  => vs bm-lines+tiered: OPTIMIZED BETTER (narrow). Security outcomes: 1 better / 1 tie / 0 worse / 3 inconclusive of 5. Security objectives: 3 better / 2 tie / 0 worse / 0 inconclusive of 5. Performance: 0 better / 3 tie / 0 worse / 0 inconclusive of 3. The optimized grid costs about the same.
+
+  BY GRID SIZE: 20 sites vs naive: NOT ESTABLISHED   20 sites vs budget-matched: NOT ESTABLISHED   20 sites vs bm-lines+tiered: OPTIMIZED BETTER (narrow)   40 sites vs naive: NOT ESTABLISHED   40 sites vs budget-matched: NOT ESTABLISHED   40 sites vs bm-lines+tiered: OPTIMIZED BETTER (narrow)   80 sites vs naive: OPTIMIZED BETTER   80 sites vs budget-matched: OPTIMIZED BETTER   80 sites vs bm-lines+tiered: OPTIMIZED BETTER (narrow)
+
+  SELF-CHECK (the verdict must be able to say no)
+    optimized vs ITSELF                        -> NOT ESTABLISHED  {'tie': 14}   [expected: all ties -> NOT ESTABLISHED]
+    roles SWAPPED (naive plays 'optimized')    -> NOT ESTABLISHED  {'default better': 10, 'tie': 2, 'optimized better': 2}   [expected: default better -> NOT ESTABLISHED]
+
+  WHICH HALF DOES THE WORK? (mean over all layouts)
+  lines = optimized N-1 line design; deployment = tiered detection + minimum PMU set
+                   spof_total  min_routes_to_cc  blast_share  cov_delivered_single  cov_delivered_regional  cov_delivered_n2_targeted  cov_delivered_worst  cost_total_kusd
+naive                  79.278             1.000        1.000                 0.450                   0.389                      0.118                0.000        2,697,853
+budget-matched         48.322             1.000        1.000                 0.534                   0.487                      0.357                0.000        3,579,907
+opt-lines+central       0.000             2.000        1.000                 0.548                   0.504                      0.397                0.000        3,614,563
+radial+tiered          79.278             1.000        0.216                 0.552                   0.542                      0.482                0.409        2,699,441
+bm-lines+tiered        48.322             1.000        0.222                 0.558                   0.546                      0.504                0.427        3,581,146
+optimized               0.000             2.000        0.225                 0.564                   0.556                      0.533                0.440        3,616,091
+
+  STANDARD TEST GRIDS (one layout each; interval = detector bootstrap only)
+  CAUTION: these coordinates are schematic and N-1 is topological. The optimized lines are NOT checked
+  against the case's loads or line ratings, so 'cheaper than as-built' is NOT a finding. Read the
+  security-outcome and single-point-of-failure columns; ignore the cost column for as-built.
+    ieee118    105 sites  vs naive: NOT ESTABLISHED   vs budget-matched: NOT ESTABLISHED   vs as-built: NOT ESTABLISHED   (5s)
+               as-built: 1 performance metric(s) are worse
+    ieee14      10 sites  vs naive: NOT ESTABLISHED   vs budget-matched: NOT ESTABLISHED   vs as-built: NOT ESTABLISHED   (0s)
+               as-built: 1 performance metric(s) are worse
+    ieee30      30 sites  vs naive: NOT ESTABLISHED   vs budget-matched: NOT ESTABLISHED   vs as-built: NOT ESTABLISHED   (1s)
+               as-built: 1 performance metric(s) are worse
+    ieee300    172 sites  vs naive: OPTIMIZED BETTER  vs budget-matched: OPTIMIZED BETTER  vs as-built: NOT ESTABLISHED   (12s)
+               as-built: 1 performance metric(s) are worse
+    ieee39      28 sites  vs naive: NOT ESTABLISHED   vs budget-matched: NOT ESTABLISHED   vs as-built: NOT ESTABLISHED   (1s)
+               as-built: 1 performance metric(s) are worse
+    ieee57      42 sites  vs naive: NOT ESTABLISHED   vs budget-matched: NOT ESTABLISHED   vs as-built: NOT ESTABLISHED   (1s)
+               as-built: 1 performance metric(s) are worse
+    illinois200 134 sites  vs naive: OPTIMIZED BETTER  vs budget-matched: OPTIMIZED BETTER  vs as-built: NOT ESTABLISHED   (8s)
+               as-built: 1 performance metric(s) are worse
+
+  LIMITS
+   - grids are simulated: synthetic layouts and standard test cases with schematic coordinates
+   - N-1 is topological (connectivity), not a power-flow check
+   - detector recall is per message and from one testbed substation; cross-substation fusion gain is not credited
+   - attacks and failures are scenario sets, not a threat model
+   - costs are relative kUSD assumptions (config.GRID_ASSUMPTIONS)
+=== compare: ok in 127.6s  |  20 numbers recorded
+
+=== [8/9] forward: -u step8_forward_test.py
+backend xgboost | train blocks 0-13 (686 msgs) | purged block | test blocks 15-19 (330 msgs)
+test class counts: {'Masquerade': 148, 'Normal': 114, 'Replay': 32, 'Injection': 28, 'Fault': 8}
+
+ATTACK DETECTORS at a 1% false-alert budget (threshold fixed on the train part only)
+  tier       thr    false alerts on test    coverage train-OOF -> test     Masq          Inj          Replay
+  sentinel  0.974     2/122 = 0.016        0.581 -> 0.528        0.93 (n=148)  0.46 (n=28)  0.19 (n=32)
+  station   0.986     1/122 = 0.008        0.425 -> 0.319        0.51 (n=148)  0.36 (n=28)  0.09 (n=32)
+  fused     0.959     4/122 = 0.033        0.540 -> 0.503        0.76 (n=148)  0.46 (n=28)  0.28 (n=32)
+
+5-CLASS HOLD-OUT (macro-F1; blocked-CV figure from step 4 in brackets)
+  all      macro-F1 0.536   recall: Normal 0.56  Fault 1.00  Masquerade 0.64  Injection 0.39  Replay 0.31   [blocked CV 0.714]
+  station  macro-F1 0.571   recall: Normal 0.75  Fault 1.00  Masquerade 0.53  Injection 0.39  Replay 0.28   [blocked CV 0.723]
+  process  macro-F1 0.262   recall: Normal 0.57  Fault 0.50  Masquerade 0.28  Injection 0.04  Replay 0.09   [blocked CV 0.308]
+
+  confusion (rows = truth, cols = predicted), view 'all':
+            Normal  Fault  Masquerade  Injection  Replay
+Normal          64      0           0         16      34
+Fault            0      8           0          0       0
+Masquerade       2      2          94         48       2
+Injection        9      0           8         11       0
+Replay          13      1           4          4      10
+
+  ONE split, ~1,000 messages: read the counts, not just the rates. A different cut of the
+  capture gives different numbers; the blocked CV in step 4 averages over all of them.
+=== forward: ok in 50.5s  |  9 numbers recorded
+
+=== [9/9] tests: -u -m unittest discover -s tests -v
+test_a_missing_case_names_the_alternatives (test_compare.TestCases.test_a_missing_case_names_the_alternatives) ... ok
+test_every_shipped_case_loads_and_is_well_formed (test_compare.TestCases.test_every_shipped_case_loads_and_is_well_formed) ... ok
+test_nudging_keeps_a_minimum_separation_and_is_deterministic (test_compare.TestCases.test_nudging_keeps_a_minimum_separation_and_is_deterministic) ... ok
+test_rescaling_follows_the_project_convention (test_compare.TestCases.test_rescaling_follows_the_project_convention) ... ok
+test_the_layout_is_rescaled_to_the_project_region (test_compare.TestCases.test_the_layout_is_rescaled_to_the_project_region) ... ok
+test_the_loader_refuses_malformed_cases (test_compare.TestCases.test_the_loader_refuses_malformed_cases) ... ok
+test_a_tiered_deployment_on_any_lines_gets_the_minimum_pmu_set_not_one_per_site (test_compare.TestDefaults.test_a_tiered_deployment_on_any_lines_gets_the_minimum_pmu_set_not_one_per_site) ... ok
+test_budget_matched_lines_are_the_shortest_available_extras (test_compare.TestDefaults.test_budget_matched_lines_are_the_shortest_available_extras) ... ok
+test_budget_matched_spends_the_same_but_not_more (test_compare.TestDefaults.test_budget_matched_spends_the_same_but_not_more) ... ok
+test_central_detection_is_cheaper_than_tiered_and_a_standby_costs_one_more_control_centre (test_compare.TestDefaults.test_central_detection_is_cheaper_than_tiered_and_a_standby_costs_one_more_control_centre) ... ok
+test_naive_control_centre_is_the_largest_site (test_compare.TestDefaults.test_naive_control_centre_is_the_largest_site) ... ok
+test_naive_default_is_a_tree_with_a_pmu_everywhere_and_one_flat_control_centre (test_compare.TestDefaults.test_naive_default_is_a_tree_with_a_pmu_everywhere_and_one_flat_control_centre) ... ok
+test_optimized_is_n1_secure_and_the_naive_default_is_not (test_compare.TestDefaults.test_optimized_is_n1_secure_and_the_naive_default_is_not) ... ok
+test_the_budget_matched_default_has_the_same_price_class_as_the_optimized_grid (test_compare.TestDefaults.test_the_budget_matched_default_has_the_same_price_class_as_the_optimized_grid) ... ok
+test_unknown_deployment_is_rejected (test_compare.TestDefaults.test_unknown_deployment_is_rejected) ... ok
+test_a_stricter_budget_never_lowers_the_threshold_or_raises_recall (test_compare.TestDetectorMaths.test_a_stricter_budget_never_lowers_the_threshold_or_raises_recall) ... ok
+test_bootstrap_is_reproducible_and_rederives_the_threshold_each_time (test_compare.TestDetectorMaths.test_bootstrap_is_reproducible_and_rederives_the_threshold_each_time) ... ok
+test_bootstrap_resamples_whole_blocks_only (test_compare.TestDetectorMaths.test_bootstrap_resamples_whole_blocks_only) ... ok
+test_missing_step6_output_says_how_to_fix_it (test_compare.TestDetectorMaths.test_missing_step6_output_says_how_to_fix_it) ... ok
+test_realised_false_alert_rate_never_exceeds_the_budget (test_compare.TestDetectorMaths.test_realised_false_alert_rate_never_exceeds_the_budget) ... ok
+test_recall_is_per_class_and_absent_class_is_nan_not_zero (test_compare.TestDetectorMaths.test_recall_is_per_class_and_absent_class_is_nan_not_zero) ... ok
+test_stable_features_are_the_ones_selected_in_every_fold (test_compare.TestDetectorMaths.test_stable_features_are_the_ones_selected_in_every_fold) ... ok
+test_tier_columns_come_from_the_views_and_never_include_metadata (test_compare.TestDetectorMaths.test_tier_columns_come_from_the_views_and_never_include_metadata) ... ok
+test_ties_are_resolved_against_the_attacker_not_for_them (test_compare.TestDetectorMaths.test_ties_are_resolved_against_the_attacker_not_for_them) ... ok
+test_zero_budget_flags_no_negative_at_all (test_compare.TestDetectorMaths.test_zero_budget_flags_no_negative_at_all) ... ok
+test_a_standby_control_centre_keeps_a_central_design_alive (test_compare.TestScenarios.test_a_standby_control_centre_keeps_a_central_design_alive) ... ok
+test_central_design_goes_blind_when_its_only_control_centre_fails (test_compare.TestScenarios.test_central_design_goes_blind_when_its_only_control_centre_fails) ... ok
+test_disc_failures_remove_every_site_within_the_radius (test_compare.TestScenarios.test_disc_failures_remove_every_site_within_the_radius) ... ok
+test_intact_grid_is_fully_covered_by_every_design (test_compare.TestScenarios.test_intact_grid_is_fully_covered_by_every_design) ... ok
+test_more_pmus_never_lower_the_fused_share (test_compare.TestScenarios.test_more_pmus_never_lower_the_fused_share) ... ok
+test_nothing_alive_means_no_scenario (test_compare.TestScenarios.test_nothing_alive_means_no_scenario) ... ok
+test_random_pairs_are_identical_across_candidates_and_distinct (test_compare.TestScenarios.test_random_pairs_are_identical_across_candidates_and_distinct) ... ok
+test_shares_are_proportions_and_delivery_never_exceeds_detection (test_compare.TestScenarios.test_shares_are_proportions_and_delivery_never_exceeds_detection) ... ok
+test_strict_mode_credits_only_a_substations_own_pmu (test_compare.TestScenarios.test_strict_mode_credits_only_a_substations_own_pmu) ... ok
+test_the_adversary_gets_the_same_number_of_pairs_against_every_design (test_compare.TestScenarios.test_the_adversary_gets_the_same_number_of_pairs_against_every_design) ... ok
+test_tiered_detects_locally_whatever_the_network_does (test_compare.TestScenarios.test_tiered_detects_locally_whatever_the_network_does) ... ok
+test_tiered_never_detects_less_than_central_on_the_same_lines (test_compare.TestScenarios.test_tiered_never_detects_less_than_central_on_the_same_lines) ... ok
+test_bootstrap_interval_has_the_width_theory_predicts (test_compare.TestVerdict.test_bootstrap_interval_has_the_width_theory_predicts) ... ok
+test_bootstrap_is_reproducible_and_widens_with_noise (test_compare.TestVerdict.test_bootstrap_is_reproducible_and_widens_with_noise) ... ok
+test_bootstrap_of_a_constant_difference_is_that_constant (test_compare.TestVerdict.test_bootstrap_of_a_constant_difference_is_that_constant) ... ok
+test_classify_boundaries (test_compare.TestVerdict.test_classify_boundaries) ... ok
+test_coverage_is_bounded_by_the_fused_recall (test_compare.TestVerdict.test_coverage_is_bounded_by_the_fused_recall) ... ok
+test_delivery_needs_a_surviving_fusion_point_but_detection_does_not (test_compare.TestVerdict.test_delivery_needs_a_surviving_fusion_point_but_detection_does_not) ... ok
+test_evaluation_is_deterministic (test_compare.TestVerdict.test_evaluation_is_deterministic) ... ok
+test_independent_routes_reported_per_design (test_compare.TestVerdict.test_independent_routes_reported_per_design) ... ok
+test_intact_coverage_ties_between_designs (test_compare.TestVerdict.test_intact_coverage_ties_between_designs) ... ok
+test_machinery_returns_no_when_a_design_is_compared_with_itself_or_reversed (test_compare.TestVerdict.test_machinery_returns_no_when_a_design_is_compared_with_itself_or_reversed) ... ok
+test_objectives_alone_cannot_establish_a_win (test_compare.TestVerdict.test_objectives_alone_cannot_establish_a_win) ... ok
+test_overall_rule_can_say_no (test_compare.TestVerdict.test_overall_rule_can_say_no) ... ok
+test_point_estimate_counts_fault_as_a_negative (test_compare.TestVerdict.test_point_estimate_counts_fault_as_a_negative) ... ok
+test_price_is_never_netted_against_security (test_compare.TestVerdict.test_price_is_never_netted_against_security) ... FAIL
+test_recalls_never_let_fused_fall_below_station (test_compare.TestVerdict.test_recalls_never_let_fused_fall_below_station) ... ok
+test_scenario_sets_have_the_expected_sizes (test_compare.TestVerdict.test_scenario_sets_have_the_expected_sizes) ... ok
+test_secondary_local_coverage_is_never_below_delivered (test_compare.TestVerdict.test_secondary_local_coverage_is_never_below_delivered) ... ok
+test_the_adversary_goes_for_the_control_centre_of_a_central_design (test_compare.TestVerdict.test_the_adversary_goes_for_the_control_centre_of_a_central_design) ... ok
+test_the_naive_grid_can_island_most_of_the_network_and_the_optimized_one_never (test_compare.TestVerdict.test_the_naive_grid_can_island_most_of_the_network_and_the_optimized_one_never) ... ok
+test_the_optimized_grid_removes_every_single_point_of_failure_on_many_layouts (test_compare.TestVerdict.test_the_optimized_grid_removes_every_single_point_of_failure_on_many_layouts) ... ok
+test_worst_case_is_no_better_than_any_scenario_family_mean (test_compare.TestVerdict.test_worst_case_is_no_better_than_any_scenario_family_mean) ... ok
+test_a_resampled_copy_is_detected_and_only_timing_differs (test_data.Audit.test_a_resampled_copy_is_detected_and_only_timing_differs) ... ok
+test_independent_files_are_reported_as_independent (test_data.Audit.test_independent_files_are_reported_as_independent) ... ok
+test_shared_timestamps_do_not_fake_differences (test_data.Audit.test_shared_timestamps_do_not_fake_differences)
+The real files share timestamps between a Normal and a Masquerade message; an ... ok
+test_blocks_are_contiguous_time_slices (test_data.Loader.test_blocks_are_contiguous_time_slices) ... ok
+test_changed_schema_is_refused (test_data.Loader.test_changed_schema_is_refused) ... ok
+test_family_mapping (test_data.Loader.test_family_mapping) ... ok
+test_missing_file_says_where_to_put_it (test_data.Loader.test_missing_file_says_where_to_put_it) ... ok
+test_missing_values_and_text_features_are_refused (test_data.Loader.test_missing_values_and_text_features_are_refused) ... ok
+test_rates_are_measured_from_the_clock (test_data.Loader.test_rates_are_measured_from_the_clock) ... ok
+test_time_and_label_are_never_features (test_data.Loader.test_time_and_label_are_never_features) ... ok
+test_unknown_class_is_refused (test_data.Loader.test_unknown_class_is_refused) ... ok
+test_attack_coverage_is_the_mean_over_attack_classes_only (test_data.Metrics.test_attack_coverage_is_the_mean_over_attack_classes_only) ... ok
+test_false_alerts_scale_with_the_measured_rate (test_data.Metrics.test_false_alerts_scale_with_the_measured_rate) ... ok
+test_binary_model_reports_other_then_attack (test_data.Models.test_binary_model_reports_other_then_attack) ... ok
+test_probability_columns_follow_the_class_order_even_when_a_class_is_missing (test_data.Models.test_probability_columns_follow_the_class_order_even_when_a_class_is_missing) ... ok
+test_fingerprint_changes_with_the_data (test_data.Provenance.test_fingerprint_changes_with_the_data) ... ok
+test_fresh_outputs_are_read_and_reported_as_measured (test_data.Provenance.test_fresh_outputs_are_read_and_reported_as_measured) ... ok
+test_missing_outputs_are_placeholders (test_data.Provenance.test_missing_outputs_are_placeholders) ... ok
+test_outputs_older_than_the_dataset_are_stale (test_data.Provenance.test_outputs_older_than_the_dataset_are_stale) ... ok
+test_sensor_removal_can_never_raise_detection (test_data.Provenance.test_sensor_removal_can_never_raise_detection) ... ok
+test_unit_override (test_data.Provenance.test_unit_override) ... ok
+test_blocked_folds_never_split_a_block (test_data.Splits.test_blocked_folds_never_split_a_block) ... ok
+test_blocked_folds_partition_the_rows_and_keep_every_class (test_data.Splits.test_blocked_folds_partition_the_rows_and_keep_every_class) ... ok
+test_describe (test_data.Splits.test_describe) ... ok
+test_the_shuffled_split_does_straddle_blocks (test_data.Splits.test_the_shuffled_split_does_straddle_blocks) ... ok
+test_every_real_column_is_in_exactly_one_layer (test_data.Views.test_every_real_column_is_in_exactly_one_layer) ... ok
+test_merging_units_are_counted_from_the_names (test_data.Views.test_merging_units_are_counted_from_the_names) ... ok
+test_phasors_never_leak_into_the_station_view (test_data.Views.test_phasors_never_leak_into_the_station_view) ... ok
+test_unknown_columns_are_reported_not_guessed (test_data.Views.test_unknown_columns_are_reported_not_guessed) ... ok
+test_a_station_never_emits_more_verdicts_than_rows_it_scores (test_design.TestEvaluation.test_a_station_never_emits_more_verdicts_than_rows_it_scores) ... ok
+test_backup_cc_is_a_different_site (test_design.TestEvaluation.test_backup_cc_is_a_different_site) ... ok
+test_deterministic (test_design.TestEvaluation.test_deterministic) ... ok
+test_menger_connectivity_reported (test_design.TestEvaluation.test_menger_connectivity_reported) ... ok
+test_single_non_cc_failure_never_cuts_off_a_2connected_comm_graph (test_design.TestEvaluation.test_single_non_cc_failure_never_cuts_off_a_2connected_comm_graph) ... ok
+test_tiering_reduces_peak_link_load (test_design.TestEvaluation.test_tiering_reduces_peak_link_load) ... ok
+test_traffic_is_conserved (test_design.TestEvaluation.test_traffic_is_conserved) ... ok
+test_cc_is_not_a_hub_unless_forced (test_design.TestHierarchy.test_cc_is_not_a_hub_unless_forced) ... ok
+test_chosen_design_re_verifies_its_own_constraints (test_design.TestHierarchy.test_chosen_design_re_verifies_its_own_constraints) ... ok
+test_levels_are_an_output_not_an_assumption (test_design.TestHierarchy.test_levels_are_an_output_not_an_assumption) ... ok
+test_slower_hardware_never_reduces_zone_count (test_design.TestHierarchy.test_slower_hardware_never_reduces_zone_count) ... ok
+test_zones_partition_the_grid_and_are_connected (test_design.TestHierarchy.test_zones_partition_the_grid_and_are_connected) ... ok
+test_closed_neighbourhood_and_zero_injection (test_design.TestObservability.test_closed_neighbourhood_and_zero_injection) ... ok
+test_exact_matches_brute_force_and_beats_or_ties_greedy (test_design.TestObservability.test_exact_matches_brute_force_and_beats_or_ties_greedy) ... ok
+test_plan_is_valid_and_minimal_under_single_removal (test_design.TestObservability.test_plan_is_valid_and_minimal_under_single_removal) ... ok
+test_two_fold_costs_more_than_one_fold (test_design.TestObservability.test_two_fold_costs_more_than_one_fold) ... ok
+test_cost_ordering_radial_designed_mesh (test_design.TestPhysical.test_cost_ordering_radial_designed_mesh) ... ok
+test_designed_contains_the_mst (test_design.TestPhysical.test_designed_contains_the_mst) ... ok
+test_n1_secure_for_many_seeds_and_sizes (test_design.TestPhysical.test_n1_secure_for_many_seeds_and_sizes) ... ok
+test_single_outage_really_islands_nothing (test_design.TestPhysical.test_single_outage_really_islands_nothing) ... ok
+test_bridges_and_articulation_points (test_graph.TestAgainstNetworkx.test_bridges_and_articulation_points) ... skipped 'networkx not installed'
+test_components (test_graph.TestAgainstNetworkx.test_components) ... skipped 'networkx not installed'
+test_dijkstra_distances (test_graph.TestAgainstNetworkx.test_dijkstra_distances) ... skipped 'networkx not installed'
+test_disjoint_paths_and_vertex_cut (test_graph.TestAgainstNetworkx.test_disjoint_paths_and_vertex_cut) ... skipped 'networkx not installed'
+test_mst_weight (test_graph.TestAgainstNetworkx.test_mst_weight) ... skipped 'networkx not installed'
+test_bfs_hops_on_path (test_graph.TestProperties.test_bfs_hops_on_path) ... ok
+test_bridges_on_path_and_cycle (test_graph.TestProperties.test_bridges_on_path_and_cycle) ... ok
+test_kruskal_spans_and_is_acyclic (test_graph.TestProperties.test_kruskal_spans_and_is_acyclic) ... ok
+test_menger_on_ring (test_graph.TestProperties.test_menger_on_ring) ... ok
+test_voronoi_cells_are_connected (test_graph.TestProperties.test_voronoi_cells_are_connected) ... ok
+test_counts_are_reported_next_to_rates (test_tracking.ForwardSplit.test_counts_are_reported_next_to_rates) ... ok
+test_default_split_is_blocks_0_13_and_15_19 (test_tracking.ForwardSplit.test_default_split_is_blocks_0_13_and_15_19) ... ok
+test_purge_block_is_dropped (test_tracking.ForwardSplit.test_purge_block_is_dropped) ... ok
+test_separable_signal_is_found_on_later_data (test_tracking.ForwardSplit.test_separable_signal_is_found_on_later_data) ... ok
+test_test_blocks_are_strictly_later_and_disjoint (test_tracking.ForwardSplit.test_test_blocks_are_strictly_later_and_disjoint) ... ok
+test_threshold_comes_from_the_training_part_only (test_tracking.ForwardSplit.test_threshold_comes_from_the_training_part_only)
+Wrecking the test labels and features must not move the alert threshold. ... ok
+test_too_few_blocks_is_an_error_not_a_silent_tiny_test (test_tracking.ForwardSplit.test_too_few_blocks_is_an_error_not_a_silent_tiny_test) ... ok
+test_kstar_is_the_smallest_k_within_tolerance_of_the_full_set (test_tracking.Harvest.test_kstar_is_the_smallest_k_within_tolerance_of_the_full_set) ... ok
+test_missing_files_give_nothing_not_an_error (test_tracking.Harvest.test_missing_files_give_nothing_not_an_error) ... ok
+test_snapshot_skips_large_files (test_tracking.Harvest.test_snapshot_skips_large_files) ... ok
+test_stable_features_are_those_chosen_in_every_fold (test_tracking.Harvest.test_stable_features_are_those_chosen_in_every_fold) ... ok
+test_tier_and_forward_files (test_tracking.Harvest.test_tier_and_forward_files) ... ok
+test_unittest_output_is_parsed (test_tracking.Harvest.test_unittest_output_is_parsed) ... ok
+test_step6_and_8_say_which_step_to_run_first (test_tracking.MissingInputs.test_step6_and_8_say_which_step_to_run_first) ... ok
+test_a_run_round_trips (test_tracking.MlflowMirror.test_a_run_round_trips) ... skipped 'mlflow not installed (optional)'
+test_missing_mlflow_is_a_message_not_a_crash (test_tracking.MlflowMirror.test_missing_mlflow_is_a_message_not_a_crash) ... ok
+test_uri_is_sqlite_inside_the_project (test_tracking.MlflowMirror.test_uri_is_sqlite_inside_the_project) ... ok
+test_diff_reports_changed_settings_and_numbers_only (test_tracking.Records.test_diff_reports_changed_settings_and_numbers_only) ... ok
+test_index_lists_runs_in_order_and_survives_a_corrupt_record (test_tracking.Records.test_index_lists_runs_in_order_and_survives_a_corrupt_record) ... ok
+test_list_is_one_narrow_row_per_run_and_says_which_are_reportable (test_tracking.Records.test_list_is_one_narrow_row_per_run_and_says_which_are_reportable) ... ok
+test_run_reference_resolution (test_tracking.Records.test_run_reference_resolution) ... ok
+test_summary_leads_with_a_headline_and_flags_smoke (test_tracking.Records.test_summary_leads_with_a_headline_and_flags_smoke) ... ok
+test_summary_without_results_does_not_crash (test_tracking.Records.test_summary_without_results_does_not_crash) ... ok
+test_name_cannot_escape_the_runs_folder (test_tracking.RunIdentity.test_name_cannot_escape_the_runs_folder) ... ok
+test_relative_output_dir_resolves_against_project_root (test_tracking.RunIdentity.test_relative_output_dir_resolves_against_project_root) ... ok
+test_run_id_is_sortable_and_tagged (test_tracking.RunIdentity.test_run_id_is_sortable_and_tagged) ... ok
+test_design_and_compare_demand_measured_inputs (test_tracking.Runner.test_design_and_compare_demand_measured_inputs) ... ok
+test_every_step_script_exists (test_tracking.Runner.test_every_step_script_exists) ... ok
+test_only_a_whole_default_run_is_reportable (test_tracking.Runner.test_only_a_whole_default_run_is_reportable) ... ok
+test_smoke_never_writes_to_the_reportable_folders (test_tracking.Runner.test_smoke_never_writes_to_the_reportable_folders) ... ok
+test_step_selection_by_number_and_name (test_tracking.Runner.test_step_selection_by_number_and_name) ... ok
+test_steps_run_in_pipeline_order_whatever_order_they_are_asked_in (test_tracking.Runner.test_steps_run_in_pipeline_order_whatever_order_they_are_asked_in) ... ok
+test_tests_step_is_unittest_discover (test_tracking.Runner.test_tests_step_is_unittest_discover) ... ok
+test_a_silent_step_is_called_out (test_tracking.Watch.test_a_silent_step_is_called_out) ... ok
+test_elapsed_is_computed_from_the_clock_not_from_the_last_line (test_tracking.Watch.test_elapsed_is_computed_from_the_clock_not_from_the_last_line) ... ok
+test_finished_runs_show_their_final_state (test_tracking.Watch.test_finished_runs_show_their_final_state) ... ok
+
+======================================================================
+FAIL: test_price_is_never_netted_against_security (test_compare.TestVerdict.test_price_is_never_netted_against_security)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\ggcha\Documents\predictive_analytics\predictive_project\tests\test_compare.py", line 452, in test_price_is_never_netted_against_security
+    self.assertTrue(CP.overall(tally)[0].startswith("OPTIMIZED BETTER"))     # a higher price does not veto it
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 153 tests in 68.534s
+
+FAILED (failures=1, skipped=6)
+=== tests: FAILED (exit 1) in 70.5s  |  1 numbers recorded
+
+========================================================================
+run 20261018-223917: FAILED in 12.8 min
+  profile      ok                     2.5s
+  views        ok                     0.6s
+  baselines    ok                   106.8s
+  experiments  ok                   377.9s
+  design       ok                    15.3s
+  detectors    ok                    18.6s
+  compare      ok                   127.6s
+  forward      ok                    50.5s
+  tests        FAILED (exit 1)       70.5s
+  blocked-CV macro-F1, all layers        0.714
+  blocked-CV macro-F1, station layers    0.723
+  fused detector attack coverage         0.534
+  forward-test macro-F1                  0.536
+  compare.vs_naive                       NOT ESTABLISHED
+  compare.vs_budget-matched              NOT ESTABLISHED
+  tests.result                           FAILED (failures=1, skipped=6)
+  summary: runs/20261018-223917/summary.md   |   compare runs: python runs.py

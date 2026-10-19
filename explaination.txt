@@ -1,0 +1,1781 @@
+==========================================================================================
+EXPLANATION OF THE PROJECT  (file name: explaination.txt)
+Smart-grid attack detection  +  designing a secure grid from scratch
+Predictive Learning course project
+==========================================================================================
+
+Everything in this file describes the code in THIS folder and the numbers in its outputs/
+folder. Where a number appears it was produced by the project and is quoted from a file you
+can open (the file is named next to it). Where something is an assumption or a reading of
+the data rather than a measurement, the text says so in words like "assumed", "my reading"
+or "simulated".
+
+HOW TO READ THIS FILE
+---------------------
+  * Short on time?   Read PART 0 (one page), PART 8 (limits) and PART 10 (questions you may
+                     be asked).
+  * Want to follow the project in order?   Read PART 0, 1, 2, then PART 4 step by step.
+  * Want to know how the grid is actually built?   PART 5 explains each algorithm.
+  * Want to know how "optimized is better" is decided?   PART 6.
+  * Want to run something?   PART 7 (details are in RUNNING.md).
+  * A word you do not know?   PART 9 is a glossary.
+
+CONTENTS
+  PART 0   The project on one page
+  PART 1   Background you need (power-system terms, machine-learning terms, graph terms)
+  PART 2   The dataset in depth
+  PART 3   Folder map and how data flows between the steps
+  PART 4   The steps one by one (step 1 to step 8, including experiments E1 E3 E4 E6 E8)
+  PART 5   Step 5 in depth: building a grid with graph algorithms
+  PART 6   Default grid versus optimized grid: how the verdict is reached
+  PART 7   Running, tracking and testing
+  PART 8   Limits and honest caveats
+  PART 9   Glossary
+  PART 10  Questions you may be asked, with answers
+
+
+##########################################################################################
+PART 0   THE PROJECT ON ONE PAGE
+##########################################################################################
+
+0.1  The problem
+----------------
+A substation (the building where high-voltage lines meet and are switched) is protected by
+devices called relays. Relays talk to each other with short network messages called GOOSE
+messages (IEC 61850 standard). "Breaker 3 has opened" is one such message. If an attacker can
+forge, insert or replay these messages, they can make a relay open a breaker that should stay
+closed, or hide a real fault. So we want a detector: a program that looks at every message
+and says which of five things it is:
+
+    Normal        routine heartbeat traffic
+    Fault         a real electrical fault (a natural event, not an attack)
+    Masquerade    an attacker pretends to be a legitimate device
+    Injection     an attacker inserts crafted messages into the stream
+    Replay        an attacker re-sends genuine messages that were recorded earlier
+
+The project has two halves.
+
+  HALF 1 (steps 1-4, 6, 8)   Machine learning.  How well can a detector tell these five
+                             classes apart, using which evidence, and how honestly can we
+                             measure that?
+  HALF 2 (steps 5, 7)        Grid design.  Given a set of substation sites, build the
+                             transmission network, decide where sensors go, where the
+                             detector models live, which links carry the alerts, and do it
+                             with graph algorithms (BFS, DFS, Dijkstra, spanning trees, max-
+                             flow). Then compare that designed grid with a default one.
+
+The two halves meet in one place: the detector's measured recall (half 1) says how much of an
+attack a detector catches, and the graph (half 2) says which substation gets which detector
+and whether its alert can still reach someone after parts of the grid fail.
+
+0.2  What the professor asked for
+---------------------------------
+"Make the smart grid optimized at creation too: build a default non-optimized smart grid and
+an optimized created one, check the performance and the security of both, and say the
+optimized one is better."
+
+Answer in this project (steps 6 and 7), in three points:
+  * SECURITY: the optimized grid is clearly better. On every one of the 10 security measures
+    (5 "outcomes" such as how much attack detection survives a failure, 5 "objectives" such as
+    single points of failure) it beats both default grids, with 95% intervals that exclude zero.
+  * PERFORMANCE: it ties on detection quality and on link load, and it is slightly SLOWER
+    (the alert passes through three scoring stages instead of one). On your laptop that costs
+    +11.4 ms on a ~460 ms path; on a faster CPU +4.6 ms. Cost is +37% over the naive default and
+    about the same as a default given the same money.
+  * VERDICT: the overall label comes from a rule fixed in advance (PART 6): "OPTIMIZED BETTER"
+    needs zero performance losses, and the allowed latency difference is 10 ms. On the CPU where
+    the project was first run the label is OPTIMIZED BETTER; in YOUR run (22:39, 18 Oct) the
+    latency difference is 11.4 ms, just over the 10 ms limit, so the label is NOT ESTABLISHED
+    even though all 10 security measures win. That is the rule doing its job, not a bug, and
+    it is explained in PART 6.6 together with the honest options you have.
+
+0.3  The pipeline
+-----------------
+
+   Train.csv --> step 1  profile the data, audit Train.csv against Test.csv
+             --> step 2  group the 52 columns into 4 layers (process, goose, consistency, relay)
+             --> step 3  show how much the way you split the data changes the score
+             --> step 4  experiments E1 E3 E4 E6 E8 (what evidence matters, how many features,
+                         how fast, which alert threshold, what about unseen attacks)
+                              |
+                              | measured numbers (rates, feature counts, latencies, recalls)
+                              v
+             --> step 5  DESIGN a grid from scratch with graph algorithms
+             --> step 6  TRAIN three detector tiers, recall with error bars
+                              |
+                              | detector recalls with 95% intervals
+                              v
+             --> step 7  COMPARE default grids against the optimized grid (failures simulated)
+             --> step 8  FORWARD TEST: train on the first part of the capture, test on the end
+
+   run_pipeline.py runs all of this in order and records the run; runs.py lets you look at
+   past runs (PART 7).
+
+0.4  What is measured, what is simulated, what is assumed
+---------------------------------------------------------
+  MEASURED on Train.csv    detector accuracy and recall, feature counts, message rate,
+                           inference latency (on whichever CPU runs step 4).
+  SIMULATED                everything about the grid: lines, sensors, zones, failures. The
+                           Kaggle data has NO topology or geography, so the grids are
+                           synthetic layouts (and 7 standard IEEE / Illinois test cases).
+  ASSUMED                  costs (line price per km, PMU price, ...), the 25% "blast radius"
+                           policy, per-hop delays, the 50 km outage radius. All are in
+                           src/config.py -> GRID_ASSUMPTIONS and are only relative numbers.
+
+0.5  Headline results (every one is explained and sourced later)
+-----------------------------------------------------------------
+These are the numbers from YOUR laptop run, run 20261018-223917 (files: outputs/ and
+runs/20261018-223917/summary.md). A second machine gives slightly different values for the
+noisy ones (PART 8.3 compares the two).
+
+  Data     Test.csv is the SAME recording as Train.csv, so Train->Test measures memorisation
+           (macro-F1 0.987). The honest number, from blocked time cross-validation, is
+           macro-F1 0.714 +/- 0.029 with all 52 features.
+  Evidence The 20 "station" columns (GOOSE state, consistency checks, relay flags) carry all
+           the useful evidence (0.723). The 32 raw voltage/current phasor columns add nothing:
+           0.308 alone, and adding them to the station columns does not help (0.714 vs 0.723).
+  Weak     Injection and Replay are caught only about 40% of the time; Masquerade 93%,
+           Fault 94%, Normal 88%.
+  Edge     6 features are chosen in every fold, all from the station layers. The smallest
+           sufficient bay model uses 8 features and cuts upstream traffic by 84.6%
+           (73 vs 477 bytes/s per measured stream) with no loss beyond the 0.01 tolerance.
+  Design   40-substation grid: 47 lines, no single point of failure (N-1 secure, +30.1% line
+           cost over a tree), 12 PMUs (30% of substations), 6 zone hubs, 4 levels. The number
+           of levels is an OUTPUT of the design, not an input.
+  Detect   At 1% false alerts (about 725 per day) the three detector tiers catch 53-63% of
+           attacks; their 95% intervals overlap, so none is proven best.
+  Compare  Over 90 synthetic layouts the optimized grid keeps 0.440 of attack coverage in
+           its worst failure scenario; both default grids keep 0. It has 0 single points of
+           failure (naive 79, budget-matched 48). 10 of 10 security measures win against
+           both defaults. Overall label on your laptop: NOT ESTABLISHED (latency +11.4 ms vs
+           a 10 ms limit); on a faster CPU: OPTIMIZED BETTER. Against a control that uses the
+           same tiered detection on untargeted lines, the win is "narrow" in both.
+  Forward  Training on the first 14 of 20 time blocks and testing on the last 5 gives
+           macro-F1 0.536 (blocked CV said 0.714): expect worse on later data.
+
+
+##########################################################################################
+PART 1   BACKGROUND YOU NEED
+##########################################################################################
+
+1.1  The substation and the messages
+------------------------------------
+  Substation        building where lines meet; contains breakers (switches), transformers,
+                    and protection relays.
+  Breaker (CB)      a big switch that opens to cut a line when something goes wrong.
+  Relay / IED       "intelligent electronic device": the computer that decides to open a
+                    breaker. It also logs why. In the data, the MU*Log columns and any_relay
+                    are relay log flags.
+  Merging unit (MU) a box that measures voltage and current on the lines (digitising the
+                    signals from instrument transformers) and publishes them as numbers on
+                    the "process bus". The testbed has four of them: MU1..MU4.
+  Phasor            a voltage or current described by size and angle. The data holds angle
+                    columns (e.g. MU1VoltageAngleA) and three-phase sums.
+  PMU               "phasor measurement unit": a sensor that measures phasors precisely with
+                    GPS time. In this project "a PMU at a substation" means a process-bus
+                    sensor feed there; it is what step 5 places.
+  GOOSE             a fast multicast message that relays use to tell each other events. When
+                    nothing happens it is repeated as a heartbeat (about once a second here).
+                    It carries two counters:
+                      stNum   state number, goes up by 1 whenever the reported state changes
+                      sqNum   sequence number, counts repeats of the SAME state and restarts
+                              when the state changes
+  Process bus vs   the process bus carries raw measurements (voltages, currents) from the
+  station bus      MUs; the station bus carries GOOSE events, relay logs and checks between
+                    devices. This split is why the columns are grouped in layers (PART 2).
+
+1.2  The attack types, in plain words
+-------------------------------------
+  Fault        a real short circuit etc. Not an attack, but it also makes breakers trip, so
+               a detector must not confuse it with an attack (false alert).
+  Masquerade   the attacker sends fake GOOSE messages pretending to be a genuine device, e.g.
+               "breaker open!". In the data these mostly carry a breaker-open state_cb=1 but
+               NO relay log and a failed consistency check (PART 2.4).
+  Injection    crafted extra messages are inserted into the stream; typically their counters
+               jump (the data shows big stNum jumps).
+  Replay       genuine recorded messages are sent again. Because they ARE genuine copies they
+               look like normal traffic, which is why Replay (and Injection) are the hardest.
+
+1.3  Machine-learning terms used throughout
+-------------------------------------------
+  Feature / label     a feature is one input column; the label is the class to predict.
+  Model               XGBoost, a boosted ensemble of decision trees (300 trees, depth 6). If
+                      xgboost is not installed the code falls back to scikit-learn's
+                      HistGradientBoosting. The setting is frozen in config.MODEL_PARAMS and
+                      is the SAME for every comparison, so differences come from the evidence,
+                      not from tuning.
+  Accuracy            share predicted right. NOT used as a headline here: always answering
+                      "Normal" is right 41.6% of the time, so accuracy hides which attack a
+                      model misses.
+  Recall (per class)  of all messages that truly are class X, what share did we catch?
+  Precision           of the messages we called X, what share truly are X?
+  F1                  one number from precision and recall (their harmonic mean).
+  Macro-F1            F1 computed for each class and then averaged with EQUAL weight, so the
+                      41 Fault rows count as much as the 455 Normal rows. This is the main
+                      score.
+  PR-AUC              area under the precision-recall curve; threshold-free ranking quality.
+  False alert         a non-attack message (Normal or Fault) flagged as an attack. Also
+                      expressed per day: false alerts per day.
+  Threshold           the cut-off on the detector's attack score above which it raises an
+                      alert. Lower threshold = more attacks caught and more false alerts.
+  Attack coverage     the average of the recalls of the three attack classes at a given
+                      threshold: how much of the attack traffic a detector sees.
+  Cross-validation    split the data into folds, train on all but one fold, score the held-out
+                      fold, repeat. Gives an average and a spread (SD).
+  Out-of-fold (OOF)   a score for a message produced by a model that never saw that message's
+                      fold. OOF scores are honest; scores from a model's own training data
+                      are not.
+  Leakage             anything that lets the model "see" the answer at test time. Here the
+                      main leak is time: neighbouring messages are near-duplicates, so a
+                      random split puts copies of the same message on both sides.
+  Blocked CV          cut the recording into contiguous time blocks and hold out WHOLE blocks.
+                      Neighbours stay together, so the held-out data is genuinely unseen.
+                      (StratifiedGroupKFold in scikit-learn, 20 blocks, 5 folds.)
+  Bootstrap           resample the data many times to see how much a number would wobble. Used
+                      for 95% confidence intervals. Here the resampling unit is a time BLOCK
+                      (a "block bootstrap"), because rows within a block are not independent.
+  Paired bootstrap    resample so two things being compared use the same resamples; the
+                      difference then has a proper interval.
+  Ablation            remove or isolate part of the input (a layer) to see what it contributes.
+  Control experiment  a deliberately useless input (the clock alone) to check that the model
+                      is not learning the capture timeline instead of the attacks.
+
+1.4  Graph terms used in step 5 and 7
+-------------------------------------
+  A graph is nodes (substations) joined by edges (transmission lines, which also carry the
+  fibre for communications).
+
+  BFS (breadth-first search)   explores outward one hop at a time; gives hop counts and "what
+                               is reachable?". Used for failure sweeps: delete the failed
+                               nodes, run BFS, see who can still reach a control point.
+  DFS (depth-first search)     explores as deep as possible first; used for connected
+                               components and, with low-link values, for bridges (Tarjan).
+  Dijkstra                     shortest paths by weighted length; here weight = latency in
+                               milliseconds.
+  Minimum spanning tree (MST)  the cheapest set of edges that connects every node (Kruskal's
+                               algorithm: take the cheapest edge that does not close a loop).
+                               A tree is "radial": cheap, but every line is a single point of
+                               failure.
+  Bridge                       an edge whose loss disconnects the graph.
+  Cut vertex                   a node whose loss disconnects the graph.
+  N-1 secure                   the grid stays connected after losing any ONE line or any ONE
+                               substation = no bridges and no cut vertices. In this project
+                               N-1 is TOPOLOGICAL only (connectivity); power-flow capacity is
+                               not checked (PART 8).
+  Menger's theorem / max-flow  the number of independent routes between two nodes equals the
+                               smallest number of links (or nodes) whose loss separates them.
+                               Computed by max-flow (Edmonds-Karp). "2 independent routes to
+                               the control centre" means two disjoint failures are needed to
+                               cut a substation off.
+  Dominating set               a set of nodes such that every node is in the set or next to
+                               one. A PMU sees its own substation and its neighbours, so
+                               "observe every substation with the fewest PMUs" is a minimum
+                               dominating set (solved exactly by an integer program).
+  Zero-injection bus           a junction with no generation and no load; Kirchhoff's current
+                               law lets observability spread through it, which saves PMUs.
+  k-medoid (PAM) clustering    choose k representative nodes ("hubs") so every node is close
+                               (in latency) to one; used to split the grid into zones.
+  Blast radius                 the share of the grid exposed if ONE hub or control centre is
+                               compromised. A policy cap (25%) forces more zones.
+  Lateral movement             an intruder hopping from a compromised node to its neighbours;
+                               segmenting the network into zones limits how far it can go.
+
+
+##########################################################################################
+PART 2   THE DATASET IN DEPTH
+##########################################################################################
+
+2.1  Where it comes from and what the files are
+-----------------------------------------------
+  Source     Kaggle, "Power System Intrusion Dataset" (user sequincozes):
+             https://www.kaggle.com/datasets/sequincozes/power-system-intrusion-dataset
+  Content    IEC 61850 GOOSE messages captured in a substation testbed that has four merging
+             units (MU1..MU4), with the quantities derived from each message.
+  Files      dataset/Train.csv   1,094 rows, 54 columns
+             dataset/Test.csv    1,094 rows, 54 columns
+  Columns    "time"  + 52 feature columns + "class".
+
+  An honest note: the Kaggle page could not be opened from the environment where this code
+  was written, and the files carry no documentation. So the descriptions below are what the
+  files themselves show (counts, ranges, per-class behaviour, and checks I ran), plus the
+  standard meaning of GOOSE and IEC 61850 terms. Where I say "my reading" it is an
+  interpretation of column names and values, not the authors' definition.
+
+2.2  One row = one message
+--------------------------
+Each row is ONE GOOSE message seen on the testbed at one moment. It records:
+  * when it arrived ("time", milliseconds from the start of the capture),
+  * the protocol counters it carried (sqNum, stnum) and how they changed since the previous
+    message (sqDiff, stDiff, timeLastMsg, recentChange),
+  * the breaker state it reported (state_cb),
+  * the measurements the four merging units reported at that moment (voltage and current
+    angles, three-phase sums),
+  * check flags (consistency, MU*Cs, Cs) and relay logs (MU*Log, any_relay),
+  * the label ("class") assigned by the people who built the dataset.
+
+"time" and "class" are never used as inputs to a model. "time" is only used to order the
+rows and to cut the capture into blocks (it is the capture clock: a model given it could learn
+WHEN attacks were launched instead of what they look like; experiment E1 includes a control
+that proves how little the clock alone is worth: macro-F1 0.17). "class" is the target.
+
+2.3  The 52 feature columns, layer by layer
+-------------------------------------------
+The project groups the columns into four layers by where in the substation the evidence is
+produced (src/modalities.py; the full mapping is written to outputs/step2_view_map.csv).
+"station" is not a fifth set of columns: it is goose + consistency + relay together (20
+columns), i.e. everything a station-level computer sees WITHOUT the raw phasors.
+
+  LAYER goose (7)  -- protocol state on the station bus
+    sqNum         GOOSE sequence number (1..53 in this capture).
+    stnum         GOOSE state number (1..100).
+    state_cb      circuit-breaker state reported by the message (0 or 1). 1 in 465 of 1094
+                  rows.
+    sqDiff        sqNum minus the previous message's sqNum (range -52..50).
+    stDiff        stnum minus the previous message's stnum (range -81..89).
+    timeLastMsg   milliseconds since the previous message of ANY class (0..1001). Normal
+                  heartbeats are about 1000 ms apart, but attack messages arrive in between
+                  and shorten the gap (median 619 ms for Normal rows, 228-312 ms for attacks).
+    recentChange  change in state_cb versus the previous message: -1, 0 or +1.
+                  (In Train.csv it equals state_cb minus the previous row's state_cb in 99.1%
+                  of rows.)
+
+  LAYER consistency (8)  -- cross-checks computed at the station
+    MU1Cs MU2Cs MU3Cs MU4Cs   per-merging-unit consistency flags. Non-zero in only 6, 4, 0
+                  and 31 rows. MU3Cs is constant 0 -- the only constant column; it is kept
+                  because removing it changes nothing.
+    Cs            a combined flag, non-zero in 48 rows.
+    consistency   an overall check flag, 1 in 621 rows. My reading: 1 = the message passes the
+                  cross-check. It is 1 for 98% of Normal rows and only 6% of Masquerade rows
+                  (table in 2.4), which is why it matters so much.
+    threePhaseVSum, threePhaseCSum   sums of the three phase voltages / currents. For a healthy
+                  balanced system they are near 0 (Kirchhoff residual); large values signal
+                  a disturbance or inconsistent numbers.
+
+  LAYER relay (5)  -- protection-relay log flags
+    MU1Log MU2Log MU3Log MU4Log   the relay logged an event for that unit (non-zero in 46, 52,
+                  33 and 34 rows).
+    any_relay     1 if any relay logged (92 rows). It is 0 for every Normal row and 1 for
+                  every Fault row: a real fault always shows up in the relay log.
+
+  LAYER process (32)  -- raw merging-unit measurements (the "process bus")
+    Per merging unit (8 columns each, 4 units = 32):
+      threePhaseV<MU>        voltage magnitude summary (named threePhaseVMU1 .. threePhaseVMU4)
+      <MU>VoltageAngleA/B/C  voltage angle on phase A, B, C (degrees, -180..180)
+      threePhaseC<MU>        current magnitude summary (threePhaseCurrentMU1,
+                             threePhaseCMU2, threePhaseCMU3, threePhaseCMU4)
+      <MU>CurrentAngleA/B/C  current angle on phases A, B, C (MU4's are named IED4_iA/B/C)
+    Angles take a different value in almost every row (about 1,000 distinct values per 1,094
+    rows), so a tree model can use them to MEMORISE a particular message. That is exactly why
+    the process view scores 1.000 in Train->Test (the same messages are in both files) and
+    only 0.308 under honest blocked CV.
+
+  Counts: 7 + 8 + 5 + 32 = 52.   station = 7 + 8 + 5 = 20.   all = 52.
+
+2.4  The five classes, and what each looks like in the data
+------------------------------------------------------------
+Class counts (the same in Train.csv and Test.csv):
+
+    Normal 455 (41.6%)   Masquerade 397 (36.3%)   Injection 101 (9.2%)
+    Replay 100 (9.1%)    Fault 41 (3.7%)
+
+Always answering "Normal" gives 41.6% accuracy; this is why accuracy is not reported.
+Families used in the project: Normal; Natural (= Fault); Attack (= Masquerade, Injection,
+Replay).
+
+Per-class profile of the main station-layer columns, computed from Train.csv (share of rows
+where the flag is non-zero, or the median value):
+
+                         Normal   Fault  Masquerade  Injection  Replay
+    state_cb  (share=1)    0.00    1.00      0.91       0.50      0.12
+    any_relay (share=1)    0.00    1.00      0.09       0.07      0.09
+    consistency (share=1)  0.98    0.32      0.06       0.50      0.84
+    MU1Log / MU2Log        0.00    0.61/0.63 0.04       0.05/0.06 0.02/0.03
+    MU3Log / MU4Log        0.00    0.29/0.27 0.04       0.01      0.06/0.05
+    recentChange != 0      0.59    0.68      0.71       0.47      0.39
+    median timeLastMsg ms  619     293       289        228       312
+    median sqNum           9       1         6          17        6
+    median stDiff          0       1         1          7         -3
+
+What this says, in plain words (my reading):
+  * Normal      quiet: no breaker-open state, no relay log, passes the consistency check, and
+                messages arrive about a second apart.
+  * Fault       breaker open (state_cb=1 in every row) AND the relay logged it (any_relay=1 in
+                every row). sqNum is 1: a new event just started.
+  * Masquerade  also reports breaker-open (91%) but the relay did NOT log it (91% have
+                any_relay=0) and the consistency check fails (94% have consistency=0). A
+                fake trip: it imitates a Fault's breaker state without a relay behind it. That
+                is the signature that separates Fault from Masquerade.
+  * Injection   the counters jump: median stDiff is 7 (normal traffic: 0), messages arrive
+                faster (median gap 228 ms). Consistency and breaker state are mixed (50/50),
+                which is why Injection is hard.
+  * Replay      the hardest. A replayed message is a genuine old message, so it looks like
+                Normal on most columns (consistency 0.84, breaker state 0.12). Only subtle
+                timing and counter patterns give it away.
+
+Detector results follow this: Masquerade and Fault are recognised ~93-94% of the time under
+honest evaluation, Injection and Replay only ~40% (PART 4, step 3 and E1).
+
+2.5  The capture timeline
+-------------------------
+  * Length: 476.96 seconds (about 8 minutes). First message at 1.0 s, last at 477.96 s.
+  * 1,094 messages -> 2.294 messages per second on average (outputs/step1_profile.json).
+  * Normal traffic is a heartbeat: the gap between consecutive Normal messages has a median
+    of exactly 1000 ms. Fault and attack messages arrive in between.
+  * Median gap between any two consecutive messages 371 ms; 95th percentile 1000 ms.
+  * Non-attack rate (Normal + Fault): 496 messages / 476.96 s = 1.04 per second. This number
+    converts false-alert RATES into false alerts PER DAY (x86,400 s): one false alert among
+    the 496 non-attack messages is already 181 false alerts a day, the "resolution floor" of
+    experiment E6.
+  * Four merging units contribute to every row. Per-bay quantities in step 5 are the measured
+    row divided by 4.
+
+The capture is cut into 20 equal-width time blocks of about 23.9 s each (block 0 starts at
+1.0 s, block 19 at 454.4 s). Messages per class in each block:
+
+   block  first_msg_s  Normal Fault Masq Inj Replay
+     0       1.0     23     3    16    5    3
+     1      25.0     24     3    27    6    7
+     2      49.0     23     0    14    8    3
+     3      72.5     23     4    23    7   11
+     4      96.5     22     3    25    1    1
+     5     120.3     23     1     9    1    4
+     6     144.1     24     1     0    3    2
+     7     168.1     21     4     0    5    5
+     8     192.3     23     1     0    5    1
+     9     215.9     24     0     0    4    4
+    10     239.9     22     2     5    7    4
+    11     263.6     22     4    24    7   11
+    12     287.4     21     5    26    6    8
+    13     311.6     24     0    31    5    2
+    14     335.0     22     2    49    3    2
+    15     358.8     23     1    48    4    3
+    16     382.6     24     1    28    7    4
+    17     407.0     22     3    24    3    7
+    18     430.4     23     1    24    3   11
+    19     454.4     22     2    24   11    7
+
+  Things to notice: Masquerade is absent for blocks 6-9 (about 96 seconds), Fault is absent
+  from blocks 2, 9 and 13, and only 14 of the 20 blocks contain all five classes. Blocks hold
+  between 30 and 79 messages (median 60). This is why the code must cope with a training fold that
+  has never seen a class (see models.py: EncodedModel), and why per-class recalls for Fault
+  carry wide error bars.
+
+2.6  How the derived timing columns are computed (verified)
+-----------------------------------------------------------
+sqDiff, stDiff, timeLastMsg and recentChange are DIFFERENCES between a row and the row before
+it in time order. I checked this on Train.csv by re-computing them from the time-ordered rows:
+
+    timeLastMsg  =  time          - previous time        matches in 97.3% of rows
+    sqDiff       =  sqNum         - previous sqNum       matches in 97.3% of rows
+    stDiff       =  stnum         - previous stnum       matches in 98.6% of rows
+    recentChange =  state_cb      - previous state_cb    matches in 99.1% of rows
+
+(The first row has no predecessor; the rest of the mismatches are ties and edge cases I did
+not chase.) Consequence: these are not independent measurements of the message; each row
+inherits information from its neighbour in time. For a real detector they would be computed
+from the last message the detector saw, which is fine -- but it means rows are NOT independent
+samples, and a random split would let a row sit next to its own neighbours in training.
+
+2.7  Train.csv and Test.csv are the same recording
+--------------------------------------------------
+This is the most important fact about the dataset. Step 1 audits it:
+
+  * All 1,094 (time, class) pairs in Test.csv also appear in Train.csv (100%). The class
+    counts are identical.
+  * 48 of the 52 feature columns are IDENTICAL value-for-value. Only the four timing columns
+    differ: timeLastMsg in 69% of rows, stDiff in 68%, sqDiff in 65%, recentChange in 56%.
+  * 255 rows (23%) are identical in every single column.
+  * Train.csv's timing columns can be rebuilt from its own time-ordered rows (97-99%);
+    Test.csv's cannot (31-35%). Test.csv's timing columns were therefore derived by some other
+    ordering or process that I cannot see from the files.
+
+So "train on Train.csv, test on Test.csv" is not testing on new data: it asks the model to
+recognise messages it has already seen, with four columns changed. The audit merges on
+(time, class) rather than time alone -- merging on time alone would fake column differences.
+
+2.8  What this means for how the project evaluates
+---------------------------------------------------
+Three ways to score the same model (macro-F1, outputs/step3_protocols.csv, your run):
+
+                        all 52     station 20    process 32
+  shuffled rows CV       0.789       0.811         0.284    (neighbouring copies on both sides)
+  BLOCKED time CV        0.714       0.723         0.308    <- the honest number used everywhere
+   (SD over folds)      +/-0.029    +/-0.031      +/-0.019
+  Train -> Test          0.987       0.982         1.000    (memorising the same recording)
+  Test -> Train          0.461       0.469         1.000
+
+  * The 0.987 is not a result. It is the inflation caused by the leak: +0.273 over the honest
+    number. The process view's 1.000 (and 1.000 the other way round) is the clearest sign of
+    memorisation: the angle columns are unique per message and identical in both files, so a
+    lookup works perfectly; yet by honest evaluation they classify almost nothing (0.308).
+  * Shuffled CV (0.789) is also inflated (+0.074 for "all") because a message's neighbours,
+    which are near-duplicates, sit in training.
+  * Therefore NO number reported anywhere in the project uses Test.csv. The project uses
+    blocked time CV inside Train.csv, and a forward test (step 8).
+
+2.9  What the data can and cannot tell us
+-----------------------------------------
+  CAN     how well each layer's evidence separates the five classes at a message level; which
+          features matter; how fast a model scores; what alert threshold gives what false-alert
+          budget; how well a detector generalises to a held-out period or attack type.
+  CANNOT  anything about grid topology, geography, line capacity or other substations: it is
+          ONE testbed substation, ~8 minutes, one capture. It says nothing about how a
+          detector sees an attack that spans several substations, nothing about time-to-first-
+          alert (there are no attack "episodes" with start and end), and its Injection and
+          Replay classes have only ~100 messages each, so their recalls are noisy (+/-0.12 to
+          0.16 SD across folds).
+  That is why step 5 and 7 simulate the grid, and why the link between data and grid is kept
+  to ONE clearly-labelled place: the measured recall of each detector tier.
+
+
+##########################################################################################
+PART 3   FOLDER MAP AND HOW DATA FLOWS BETWEEN THE STEPS
+##########################################################################################
+
+3.1  What is in the folder
+--------------------------
+  predictive_project/
+    dataset/
+      Train.csv, Test.csv          the Kaggle data (yours; never modified)
+      grids/                       7 standard test grids as CSV + README.md with provenance
+      Power Attcl.png              your own picture; untouched
+    src/                           the library every step imports (map below)
+    step1_profile.py ... step8_forward_test.py     the eight steps, run in order
+    run_pipeline.py                runs steps 1-8 + unit tests and records the run
+    runs.py                        list / show / diff / watch recorded runs
+    tests/                         153 unit tests
+    tools/export_cases.py          optional: rebuilds dataset/grids from pandapower
+    outputs/                       result files of the latest full run (CSV, JSON, PNG)
+    outputs_smoke/, models_smoke/  throw-away results of --smoke runs (never reportable)
+    models/                        fused.joblib, sentinel.joblib, station.joblib (step 6)
+    runs/                          one folder per recorded run + index.csv
+    .vscode/                       VS Code tasks, debug configs, settings, extensions
+    .venv/                         your Python environment
+    README.md                      results, run guide, limits (short)
+    README_CODE.md                 what each file does
+    RUNNING.md                     setup, running, tracking, troubleshooting
+    requirements.txt, .gitignore
+    final_t&t.txt, rehersal_t&t.txt   your saved terminal output of the full and smoke runs
+    explaination.txt               this file
+
+3.2  The library, src/
+----------------------
+  config.py            every choice in one place: paths, class names, 20 blocks, 5 folds, seed
+                       42, XGBoost settings, the 1% false-alert budget, and GRID_ASSUMPTIONS
+                       (all costs, delays and caps). Print it to get an appendix.
+  data.py              loads the CSVs, ASSERTS the facts the project relies on (T1 same
+                       columns, T2 exactly five classes, T3 numeric with no missing values,
+                       T4 a usable clock), builds the 20 time blocks, and does the Train/Test
+                       audit. A different download fails loudly instead of quietly.
+  modalities.py        which column belongs to which layer (regular expressions).
+  splits.py            blocked CV (the honest split), shuffled rows (the dishonest one, kept
+                       only to show the gap).
+  models.py            XGBoost factory + EncodedModel, which copes with a training fold that
+                       is missing a class (re-labels to the classes present and puts the
+                       probabilities back into the full five columns by name).
+  metrics.py           macro-F1, per-class recall, PR-AUC, attack coverage, false alerts per
+                       day, upstream bytes per second. No bare accuracy anywhere.
+  experiments/         e1_views.py, e3_feature_budget.py, e4_compute_profile.py,
+                       e6_operating_point.py, e8_unseen_attack.py
+  detectors.py         the three detector tiers: out-of-fold scores, threshold at a fixed false-
+                       alert rate, block bootstrap.
+  forward_test.py      the time hold-out of step 8.
+  tracking.py          everything run_pipeline.py/runs.py need: run ids, harvesting numbers,
+                       summaries, diffs, optional MLflow.
+  design/              the grid-design code:
+    graph.py           the graph algorithms (BFS, DFS, bridges, Dijkstra, Kruskal, union-find,
+                       max-flow, min cut), written by hand so each design decision names its
+                       algorithm; tests cross-check them against networkx when it is installed.
+    params.py          what is MEASURED (read from outputs/, with a provenance tag) vs ASSUMED.
+    sites.py           synthetic substation sites (or a CSV you supply).
+    power.py           stage A: lines (MST + N-1 augmentation).
+    observability.py   stage B: PMU placement (dominating set).
+    hierarchy.py       stage C: zones, hubs, control centre (k-medoid + constraints).
+    security.py        stage D: failure sweeps, lateral movement, path diversity.
+    evaluate.py        stage E: traffic, latency, cost, A/B/B+/C comparison, role table.
+    design.py          the orchestrator that runs A..E and writes the step-5 outputs.
+    cases.py           loads the 7 standard grids.
+    baseline.py        builds the DEFAULT grids (naive, budget-matched, as-built).
+    compare.py         the scoring engine and verdict rules of step 7.
+
+3.3  Which step feeds which
+---------------------------
+   step 1 --> outputs/step1_profile.json ------------------------------+
+   step 2 --> outputs/step2_view_map.csv                                |
+   step 3 --> outputs/step3_baselines.json, step3_protocols.csv         |
+   step 4 --> e1_*, e3_*, e4_*, e6_*, e8_* ------------------+----------+--> step 5 (design)
+                                |                            |
+                                +--> e3_feature_stability ---+--> step 6 (detectors) --> step 7
+                                |                                (compare grids)
+                                +--> e3_feature_stability ------> step 8 (forward test)
+
+  * Step 4 must run before steps 5, 6 and 8. Step 6 must run before step 7.
+  * Steps 5 and 7 REFUSE to use an input that is a placeholder or older than Train.csv (they
+    exit with code 2 and say which). That protects you from quoting a design built on stale
+    numbers. run_pipeline.py runs the steps in the right order for you.
+  * "python run_pipeline.py --only 4 6 8" re-runs just the three train/test steps.
+
+
+##########################################################################################
+PART 4   THE STEPS ONE BY ONE
+##########################################################################################
+
+Every step below has the same layout: what question it answers, what it does, what it
+writes, how to read the result, and the numbers from your laptop run (20261018-223917).
+"Trains / tests" says explicitly whether a model is fitted and what it is scored on.
+
+Time on your laptop (full run, 12.8 min): profile 2.5 s, views 0.6 s, baselines 106.8 s,
+experiments 377.9 s, design 15.3 s, detectors 18.6 s, compare 127.6 s, forward 50.5 s,
+tests 70.5 s.
+
+
+------------------------------------------------------------------------------------------
+STEP 1   step1_profile.py   -   profile the data and audit Train against Test
+------------------------------------------------------------------------------------------
+Question   What is in the data, and can I trust the shipped Train/Test split?
+Trains / tests   nothing. Pure counting.
+
+What it does
+  1. Loads both files through data.py (which asserts T1-T4).
+  2. Counts rows, classes, the capture length and the message rates (PART 2.5).
+  3. Builds the 20 time blocks and reports their size (30-79 rows, median 60; 14 blocks hold
+     all five classes).
+  4. Checks column health: constant columns (only MU3Cs), columns in no layer (none), mean
+     number of distinct values per layer (consistency 166.6, goose 102.6, process 856.5,
+     relay 2.0).
+  5. Runs the Train-vs-Test audit (PART 2.7): the same messages, 48 of 52 columns identical.
+
+Writes      outputs/step1_profile.json   (everything above, machine-readable)
+            outputs/step1_column_health.csv   (one row per column: layer, distinct values,
+                                              non-zero rows, min, max, constant?)
+Read it as  "always-predict-Normal accuracy is 0.4159, so I must use macro-F1"; "Test is the
+            same recording, so I must not use it as a test".
+Why it matters  The measured message rate (2.294/s) and the four merging units per row feed
+            the bandwidth and compute numbers in step 5 automatically.
+
+
+------------------------------------------------------------------------------------------
+STEP 2   step2_views.py   -   the four layers (views)
+------------------------------------------------------------------------------------------
+Question   Which columns belong to which layer, and which layer should matter for which
+           class, before any model is fitted?
+Trains / tests   nothing.
+
+What it does   Applies the regular expressions in modalities.py to the 52 column names, prints
+               the membership (process 32, goose 7, consistency 8, relay 5, station 20, all
+               52), and prints for each layer the per-class share of non-zero values (the table
+               in PART 2.4 is the same information).
+Writes         outputs/step2_view_map.csv  (column -> layer).
+Why it matters The layers are HYPOTHESES about the architecture (a bay sees process data; a
+               station correlator sees GOOSE, checks and relay logs). Step 4 (E1) tests them.
+               A column that matched no layer would be reported as "unknown"; none do.
+
+
+------------------------------------------------------------------------------------------
+STEP 3   step3_split_and_baseline.py   -   how much does the way you split change the score?
+------------------------------------------------------------------------------------------
+Question   How inflated is a score that comes from a bad split?
+Trains / tests   YES. For three views (all, station, process) it fits the same XGBoost model
+                 under four protocols and scores it:
+                   shuffled rows CV    random rows of Train.csv: neighbours on both sides
+                   blocked time CV     whole time blocks held out  <- the honest one
+                   published split     fit Train.csv, score Test.csv
+                   reverse             fit Test.csv, score Train.csv
+Results (macro-F1, your run)
+                            all 52      station 20     process 32
+   shuffled rows CV         0.789        0.811          0.284
+   blocked time CV          0.714        0.723          0.308     (SD 0.029 / 0.031 / 0.019)
+   Train -> Test            0.987        0.982          1.000
+   Test -> Train            0.461        0.469          1.000
+   published inflation      +0.273       +0.259         +0.692    (published minus blocked)
+   memorisation gap         0.074        0.088         -0.024     (shuffled minus blocked)
+
+Per-class recall with all 52 features
+                            Normal   Fault   Masquerade   Injection   Replay
+   blocked CV (honest)       0.882   0.943     0.929        0.396      0.402
+   Train -> Test (leaky)     1.000   1.000     0.997        1.000      0.910
+
+How to read it
+  * The jump from 0.714 to 0.987 is not skill. It is the model re-recognising messages it saw.
+  * Per class, the leaky split makes Injection look PERFECT (1.000) when it is really caught
+    40% of the time. That is the kind of mistake the project is built to avoid.
+  * The process view scores 1.000 both ways in the published split, because the angle columns
+    are identical in both files; honestly it scores 0.308.
+  * Test -> Train is poor (0.46). That fits the four timing columns having been computed
+    differently in Test.csv (PART 2.7): a model fitted on Test's timing columns does not
+    transfer to Train's.
+Writes      outputs/step3_baselines.json, outputs/step3_protocols.csv
+
+
+------------------------------------------------------------------------------------------
+STEP 4   step4_run_experiments.py   -   the five experiments E1, E3, E4, E6, E8
+------------------------------------------------------------------------------------------
+Each experiment fixes ONE parameter of the architecture and produces numbers that step 5 reads.
+Everything cross-validates with the blocked time folds inside Train.csv. The model and its
+budget are frozen (config.MODEL_PARAMS) and identical for every view, so a difference between
+views is a difference in evidence, never in effort. (There is no E2, E5 or E7: those belonged to
+the earlier version of the project and were removed.)
+
+Use  python step4_run_experiments.py [--only e1 e3 ...] [--skip ...]
+Time on your laptop: E1 117 s, E3 191 s, E4 22 s, E6 7 s, E8 39 s.
+
+~~~ E1 - VIEW ABLATION  (which layer must feed the detector?) ~~~
+Trains / tests  YES: 8 inputs x 5 folds. Same model, same folds, only the input columns change.
+Inputs          the 4 single layers, station (goose+consistency+relay), all, and two CONTROLS:
+                the clock alone, and the two GOOSE counters alone (sqNum, stnum). The controls
+                prove the model is not just learning where in the capture a message sits.
+Results (blocked CV, macro-F1 +/- fold SD; attack coverage = mean recall of the 3 attacks)
+
+   input               columns   macro-F1       attack coverage
+   process                32     0.308 +/- 0.019      0.156
+   goose                   7     0.629 +/- 0.043      0.629
+   consistency             8     0.503 +/- 0.029      0.331
+   relay                   5     0.253 +/- 0.038      0.016
+   station (g+c+r)        20     0.723 +/- 0.031      0.615
+   all                    52     0.714 +/- 0.029      0.576
+   control: clock only     1     0.173 +/- 0.037      0.358
+   control: counters only  2     0.228 +/- 0.098      0.284
+
+   Note: "attack coverage" in this table uses the plain most-likely-class decision with no
+   false-alert control, so a model that answers "Masquerade" far too often scores well on it
+   (the clock-only control reaches 0.358 that way). Read it together with macro-F1; the
+   false-alert-controlled coverage is what step 6 reports.
+
+   Under SHUFFLED rows the counters-only control climbs from 0.23 to 0.41: a random split lets
+   a model that only knows "where in the capture" look useful. Under blocked CV it does not.
+
+Per-class recall (blocked): all  Normal 0.882  Fault 0.943  Masq 0.929  Inj 0.396  Replay 0.402
+                            station Normal 0.845 Fault 0.928 Masq 0.906 Inj 0.476 Replay 0.465
+
+What it tells you
+  * FUSION ACROSS STATION LAYERS IS JUSTIFIED: station (0.723) beats the best single layer,
+    goose (0.629), by 0.094 -- more than the fold spread of 0.03-0.04.
+  * PHASORS ADD NOTHING: all (0.714) is not better than station (0.723). The difference is
+    inside the fold spread. A detector does not need to ingest raw voltage/current angles.
+  * Each layer has a specialty: consistency finds Masquerade (0.905) but almost never Injection
+    (0.019) or Replay (0.071); relay finds Fault (0.612) and nothing else; goose timing finds
+    Injection (0.556) and Replay (0.508) best of all.
+  * The attack coverage of goose alone (0.629) is as high as anything else; differences among
+    goose, station and all are within noise.
+  * Because station >= all, step 5 caps station coverage at the "all" figure ("removing sensors
+    cannot raise detection"), and prints that it did so.
+Writes  outputs/e1_views_blocked.csv, outputs/e1_controls_shuffled.csv
+
+~~~ E3 - MINIMAL FEATURE SET k*  (how many numbers must a bay send upstream?) ~~~
+Trains / tests  YES. Inside each fold: rank the features by model gain on the TRAINING part
+                only, then retrain on the top k for k = 1, 2, 3, 5, 8, 12, 16, 20, 24, 32, 40,
+                52, and score the held-out blocks. (Ranking on all the data first and then
+                cross-validating is a classic "selection leak"; this avoids it.)
+k*              the smallest k whose macro-F1 is within 0.01 of the full 52-feature model.
+Results         k    1     2     3     5     8     12    16    20    24    32    40    52
+                F1  .338  .421  .547  .569  .718  .738  .730  .719  .732  .713  .717  .710
+   k* = 8. Upstream traffic = k x 4 bytes x 2.294 messages/s, so k=8 sends 73 bytes/s and the
+   full vector 477 bytes/s: an 84.6% reduction at the same accuracy.
+   Fold-stable features (chosen in ALL 5 folds): consistency, state_cb, any_relay, Cs,
+   stDiff, MU4Log  -> 6 features, ALL from the station layers; 0 are raw phasors.
+   Chosen in fewer folds: MU2Log (4), MU1Log (3), and MU4Cs, MU3Log, recentChange (1 each).
+   (On the first machine the stable six were consistency, state_cb, any_relay, stDiff,
+   recentChange, MU3Log. The identity of the last two or three can change with the library
+   version; what does not change is "six, all from the station layers".)
+What it fixes  the spec of the bay-level "sentinel": 6 numbers per message. Step 6 uses exactly
+               these six.
+Writes  outputs/e3_feature_budget.csv, outputs/e3_feature_stability.csv
+
+~~~ E4 - COMPUTE PROFILE  (which model can live in which tier?) ~~~
+Trains / tests  fits each candidate once on a training split, then TIMES scoring: p50, p95, p99
+                milliseconds for ONE message at a time (the honest edge case), model size, and
+                per-message cost in batches of 128.
+Rule            the detector is ADVISORY, never part of the protection path (protection acts in
+                20-100 ms), so it only has to meet a budget: tier 1 (bay) 100 ms, tier 2
+                (station/zone) 1,000 ms, tier 3 (wide area) 10,000 ms.
+Results (YOUR laptop)
+   config                      features   p50 ms   p95 ms   p99 ms   budget   fits
+   tier1_edge_kstar (sentinel)     6        3.76     4.90     5.38     100     yes
+   tier1_edge_process_only        32        3.55     7.02    13.88     100     yes
+   tier2_zone_fused               52        8.61    10.50    11.05    1000     yes
+   tier3_widearea_fused           52        8.67    10.17    10.72   10000     yes
+   Everything fits by a factor of 10 or more; at 2.3 messages/s a core is nearly idle.
+IMPORTANT  Latency is hardware-specific. On the first machine tier-2 p95 was 5.7 ms; on yours
+           it is 10.5 ms. Step 5 and 7 read these figures, and a slower CPU makes the tiered
+           design slower (it scores three times along the path). This is exactly why the step-7
+           verdict differs between machines (PART 6.6).
+Writes  outputs/e4_compute_profile.csv
+
+~~~ E6 - OPERATING POINT AND ALARM BUDGET  (what threshold does each tier ship with?) ~~~
+Trains / tests  YES. A 5-class model gives each message an out-of-fold attack score
+                P(Masquerade)+P(Injection)+P(Replay) ("out-of-fold" = scored by a model that never
+                saw its time block). Sweeping the threshold turns that into recall vs false
+                alerts per day. "Negative" means Normal + Fault (a Fault flagged as an attack is a
+                false alert).
+Key fact        the capture has only 496 non-attack messages, so ONE false alert already equals
+                181 false alerts per day (1/496 x 1.04 msg/s x 86,400 s). That is the
+                "resolution floor": budgets below ~181/day cannot be tested with this data.
+Results (your run)
+   false-alert budget/day   actual/day   attack recall   precision
+          100                   0 (below floor)   0.632       1.000
+          500                 362               0.681       0.995
+        2,000               1,993               0.783       0.977
+       10,000               9,782               0.888       0.908
+   i.e. an operator who tolerates ~2,000 false alerts a day catches ~78% of attack messages.
+Writes  outputs/e6_operating_curve.csv, outputs/e6_operating_points.csv
+
+~~~ E8 - UNSEEN-ATTACK GENERALISATION  (does one central model fit every site?) ~~~
+Question        If a detector is trained where attack type A was seen and deployed where a new
+                variant B appears, does it still raise the alarm?
+Trains / tests  YES. Leave-one-attack-class-out: for each attack class, train a detector
+                WITHOUT any message of that class ("unseen") and one WITH it ("seen"), inside
+                the same blocked folds, and compare how many of that class they catch at the
+                SAME false-alert rate (5% of non-attack messages). A fair comparison needs the
+                same operating point: a model that never saw an attack also raises fewer false
+                alarms, which would otherwise hide the loss.
+Results (view = all)    seen recall -> unseen recall     gap (the cost of never having seen it)
+   Masquerade               0.950   ->   0.305           +0.645
+   Injection                0.594   ->   0.525           +0.069
+   Replay                   0.350   ->   0.190           +0.160
+   mean gap                                              +0.291
+   The process view has gaps near zero only because it cannot detect these attacks even when it
+   HAS seen them (recall ~0.05, chance level at that false-alert rate).
+Reading         Masquerade detection depends strongly on having seen Masquerade. A model
+                shipped to a site that has never experienced a type of attack will miss most of
+                it. This is an ARGUMENT for each site/zone adapting to its own traffic and for a
+                central owner of model updates (step 5's role table says "one zone = one
+                federated-training unit"). The code does not simulate federated training; E8
+                only measures the gap that would motivate it.
+Writes  outputs/e8_unseen_attack.csv
+
+
+------------------------------------------------------------------------------------------
+STEP 5   step5_design_grid.py   -   BUILD a grid from scratch with graph algorithms
+------------------------------------------------------------------------------------------
+Question   Instead of fitting models to a grid somebody already laid out, can we CREATE the
+           grid -- lines, sensors, zones, hubs, control centre -- and let the number of levels
+           fall out of the result?
+Trains / tests   nothing is trained. It reads the numbers steps 1-4 measured (message rate,
+                 merging units per row, feature counts, inference latencies, detection rates),
+                 builds a grid, and stress-tests it with graph traversals. Every input prints
+                 its provenance (measured / FALLBACK / STALE); with --require-measured it
+                 refuses to run on anything that is not fresh.
+
+The five stages (the algorithms are explained in PART 5)
+  A  power.py          lines          Kruskal minimum spanning tree, then greedy augmentation
+                                      guided by Tarjan bridge / cut-vertex detection, until the
+                                      grid is N-1 secure.
+  B  observability.py  PMUs           minimum dominating set, solved exactly by an integer
+                                      program, with the zero-injection-bus propagation rule.
+  C  hierarchy.py      zones/hubs/CC  all-pairs Dijkstra, k-medoid (PAM) zoning, the smallest
+                                      number of zones that meets every constraint.
+  D  security.py       stress tests   BFS failure sweeps, lateral-movement BFS, max-flow path
+                                      diversity.
+  E  evaluate.py       numbers        traffic per link, latency, cost, the A/B/B+/C comparison,
+                                      and the role -> model table.
+
+Result for the default setting (40 substations, seed 42; the design is deterministic, so your
+run and the first machine give the same grid):
+  * 126 bays (a bay = one line terminal or generator/load tie).
+  * LINES: 47 lines, 2,031.8 km. A radial tree needs 39; the 8 extra lines remove every single
+    point of failure. Cost +30.1% over the tree and 77.4% below a full mesh (142 lines).
+        variant          lines  bridges  cut vertices  worst 1-node outage strands  diameter
+        radial (MST)       39      39         29              21 substations           22 hops
+        designed           47       0          0               0                       13 hops
+        full mesh         142       0          0               0                        6 hops
+  * PMUs: 12 (30% of substations), found exactly by an integer program that also uses the
+    zero-injection rule. Plain greedy needs 13, and so does the exact solution without the
+    zero-injection rule. (outputs/step5_pmu_curve.csv shows the greedy build-up: 97.5% of
+    substations observed with 12 PMUs, 100% with 13.)
+  * ZONES: the sweep over the number of zones k is in outputs/step5_k_sweep.csv:
+        k   largest zone share   hops   verdict
+        1        100%             9     violates share and hops (one hub = whole grid)
+        2        59.5%            6     violates
+        3        34.9%            5     violates
+        4        30.2%            4     violates (share)
+        5        25.4%            3     violates (share just over the 25% cap)
+        6        24.6%            3     FEASIBLE  <- chosen
+     k = 7..11 are also feasible but cost more (each hub is 120 kUSD); k = 12 creates a zone of a
+     single station (below the minimum of 3) and is infeasible. The binding constraint is the
+     policy "no hub may expose more than 25% of all bays". With a cap of 35% or looser only 4
+     zones would be needed, and then it is the hop limit that binds.
+     Hubs at substations 3, 16, 19, 21, 27, 38; control centre at 30 (deliberately NOT a hub,
+     so one failure cannot remove two roles).
+  * LEVELS: 4 = L1 bay sentinel, L2 station correlator, L3 zone hub, L4 control centre. With
+    one zone (k=1) the hub and control centre would coincide and there would be only 3 levels.
+    So "4 levels" is a RESULT of the 25% blast-radius policy, not a design assumption.
+  * HEADROOM (how close each constraint is to its limit; your run): zone share 0.246 of cap
+    0.25; hops 3 of 4; latency to a hub verdict 463 ms of 1000 ms; to the control centre 476 ms
+    of 10,000 ms; compute 0.00 of 8 cores per node.
+  * NOT BINDING: bandwidth and compute. At 2.3 messages/s the busiest link carries 0.02% of
+    its 100 Mbit/s capacity (0.06% in the centralised design). The grid is shaped by SECURITY
+    constraints (blast radius, hops), not by speed or traffic.
+  * COST (kUSD, assumed prices): lines 3,047,712 + fibre 30,477 + PMUs 480 + sentinels 630 +
+    station computers 1,200 + hubs 720 + control centre 400 = 3,081,620. The whole detection
+    plane (sensors + computers) is 3,430, i.e. 0.11% of the total. Detection is cheap; the
+    wires are the money.
+  * "Sensor placement buys no detection": step 5 treats station-only detection as equal to
+    all-sensor detection (E1's station figure came out slightly HIGHER than "all", which is noise,
+    so it is capped and the step says so). Hence where the PMUs go does not change the expected
+    detection, and losing one PMU changes nothing. PMUs are needed for state estimation
+    (observability), not for attack detection -- a conclusion that rests on E1's finding that
+    the phasors add nothing.
+
+The four deployments compared on the SAME physical grid (outputs/step5_comparison.csv)
+   A   physical-only, centralised     every bay streams its process-bus phasors to one control
+                                      centre (CC). Coverage when nothing fails: 0.156.
+   B   centralised fusion             every bay streams ALL features to one CC. 0.576.
+   B+  B with a hot-standby CC at a geographically separate site (so B is not a straw man).
+   C   tiered (the design)            sentinel -> station -> zone hub -> CC. 0.576.
+                                  A        B        B+       C
+   share of grid exposed by
+   one compromised fusion point  100%      100%     100%     24.6%
+   CC ingress, KB/s                9.0      14.6     27.9      6.0
+   busiest link, KB/s              4.6      7.4      14.3      2.7
+   reach after losing the CC      0 (worst) 0 (worst) 1.0     1.0
+   reach, worst 50 km outage      0         0        0        0.82
+   ("reach" = share of surviving bays whose station can still reach a fusion point.)
+   The tiered design gives the same intact detection as B with about 2.7x less peak link traffic
+   and a 4x smaller blast radius, and it survives losing the control centre because every station
+   keeps its own correlator ("fail open for the grid"). That "any-level" local detection is a
+   property of the architecture, not a measured accuracy.
+
+Stress tests (outputs/step5_failure_single_node.csv, step5_failure_regional.csv)
+  * Lose each substation in turn: tiered keeps 100% reach; plain centralised averages 97.5%
+    but its worst case is 0 (the CC itself).
+  * Lose every 50 km disc around each substation (a storm, or a coordinated attack; fibre rides
+    the same towers): centralised mean 89.5%, worst 0; with a backup CC mean 96.3%, worst 0 (the
+    disc that takes out both); tiered mean 98.6%, worst 82.1%.
+  * Lateral movement (an intruder hopping to neighbours): on a flat network 100% of bays are
+    reachable from one compromised substation; with zones (links only inside a zone) 18.6% on
+    average, at most 24.6%.
+  * Path diversity (Menger / max-flow): every substation has at least 2 vertex-disjoint routes
+    to the CC and to its hub, so no single node failure cuts a substation off.
+  * 17 "border" stations have links into other zones; 9 inter-zone links form the zone cut.
+
+Optional sweeps  --sensitivity (vary hardware speed, zone cap, hop delay, PMU redundancy,
+  zero-injection rule) and --scaling (20, 40, 80, 120 substations x 5 seeds). They are slow, so
+  run_pipeline.py includes them only with --extras; the CSVs in outputs/ come from an earlier
+  run that used them. Findings: the N-1 premium stays 28-63% across 20 layouts; PMUs stay at
+  25-30% of substations; zones 5-11; always 4 levels; every substation always has at least 2
+  routes to the CC; 18 of 20 layouts are feasible (the two that are not are 20-substation grids
+  that cannot meet the zone-size and 25% cap rules together). A 10x slower CPU is still feasible (hub verdict
+  581 ms); 50x slower breaks the 1000 ms budget and makes the design infeasible (latency binds).
+
+Writes  outputs/step5_*: design_summary.json, inputs.json (every input with its provenance and
+        the dataset fingerprint), grid_nodes.csv, grid_edges.csv, grid.png (the picture),
+        k_sweep.csv, comparison.csv, role_model_map.csv, physical_variants.csv, pmu_curve.csv,
+        failure_single_node.csv, failure_regional.csv, and (extras) sensitivity.csv, scaling.csv.
+Role -> model table (outputs/step5_role_model_map.csv): 126 bay sentinels run the 6-feature
+        model; 40 station correlators and 6 hubs run the 52-feature model; the control centre
+        runs digests only and owns model updates.
+Flags   --n 40 --seed 42 --sites my_sites.csv --pmu-k 1 --slowdown 1 --zone-share 0.25
+        --sensitivity --scaling --no-plot --require-measured
+
+
+------------------------------------------------------------------------------------------
+STEP 6   step6_train_detectors.py   -   train the three detector tiers
+------------------------------------------------------------------------------------------
+Question   The Kaggle data knows nothing about grids. What it can tell us is how well a detector
+           sees an attack GIVEN THE EVIDENCE AVAILABLE AT A POINT IN THE GRID. How good is each
+           tier, with error bars?
+Trains / tests   YES. Three detectors, identical in every way except their input columns:
+                   sentinel   the 6 fold-stable E3 features (what a bay-level model sees)
+                   station    the 20 station columns (goose + consistency + relay), no phasors
+                   fused      all 52 columns, which needs a PMU-class sensor on the process bus
+
+How each number is obtained (identical for all three)
+  1. Out-of-fold score for every message: P(Masquerade)+P(Injection)+P(Replay), from blocked
+     time CV, so a message is always scored by a model that never saw its time block.
+  2. ONE alert threshold per tier, chosen so that 1% of the non-attack messages (Normal+Fault)
+     would be flagged. The same false-alert budget for all tiers means differences in recall are
+     differences in EVIDENCE, not in how trigger-happy a model was. With 496 negatives, 1% means
+     4 false alerts, i.e. a realised rate of 0.81% = about 725 false alerts per day.
+  3. Attack coverage = average recall over Masquerade, Injection, Replay at that threshold.
+  4. Uncertainty by a BLOCK BOOTSTRAP: resample the 20 time blocks with replacement 300 times and
+     recompute coverage. The threshold is re-derived inside every replicate (it is defined by the
+     false-alert budget, so keeping it fixed would understate the spread). 41 Fault and 100
+     Replay messages are few, so the intervals matter.
+  5. Finally each tier is fitted once on ALL of Train.csv and saved to models/*.joblib.
+
+Results (your run; threshold, attack coverage with 95% interval, recall per attack)
+   tier       threshold  coverage [95% CI]        Masquerade  Injection  Replay
+   sentinel     0.938    0.625 [0.565, 0.690]       0.980       0.604     0.290
+   station      0.987    0.528 [0.488, 0.624]       0.869       0.485     0.230
+   fused        0.975    0.534 [0.492, 0.658]       0.887       0.505     0.210
+   False alerts: 4 of 496 non-attack messages each (about 725 per day).
+   (First machine: sentinel 0.538, station 0.524, fused 0.558.)
+
+How to read it  The intervals overlap, so the three tiers are STATISTICALLY INDISTINGUISHABLE.
+  Do not claim that one is best. The honest statement: a 6-feature bay model, a 20-feature station
+  model and the 52-feature model catch about the same share of attacks at 1% false alerts, which
+  is exactly what E1 predicted (the phasors add nothing). Masquerade is caught well by all
+  (87-98%); Replay is caught poorly by all (21-29%).
+Writes  outputs/step6_detectors.json, step6_tier_recall.csv, step6_recall_draws.csv (the 300
+        bootstrap draws, which step 7 reads), and models/{sentinel,station,fused}.joblib.
+Flag    --no-models  (skip saving the joblib files)
+
+
+------------------------------------------------------------------------------------------
+STEP 7   step7_compare_grids.py   -   DEFAULT versus OPTIMIZED grid (the professor's requirement)
+------------------------------------------------------------------------------------------
+Question   Is the optimized grid actually better than a default one, in performance and in
+           security, and could the comparison have said "no"?
+Trains / tests   nothing is trained. The recalls come from step 6 (measured). The grids and
+                 failures are SIMULATED. This split is the whole point: the data measures the
+                 detector; the graph decides which detector a substation gets and whether its
+                 alert can still get out.
+
+The grids that are compared (src/design/baseline.py)
+   naive default          lines   the cheapest connected network (the MST: radial)
+                          PMUs    one in every substation
+                          fusion  one control centre at the largest site, no zones, no backup
+                          detect  centralised: every substation streams to the control centre
+   budget-matched default lines   the MST plus the SHORTEST extra corridors until the total spend
+                                  equals the optimized grid's (redundancy not aimed at weak spots)
+                          PMUs    one in every substation; a control centre plus a hot standby
+                          detect  centralised
+   OPTIMIZED              lines   MST + targeted N-1 augmentation   PMUs  minimum dominating set
+                          fusion  k-medoid zones, hubs, control centre on a non-hub site
+                          detect  tiered (sentinel -> station -> hub -> CC)
+   control "bm-lines+tiered"      the budget-matched lines with the tiered detection. It answers
+                                  "is it the graph-designed lines or just the tiered detection
+                                  doing the work?"
+   as-built (reference, standard cases only)   the real network's own corridors, naive deployment.
+The budget-matched default answers "isn't the optimized grid just spending more?": it spends the
+same, only without aiming the money at weak points.
+
+How a failure scenario is scored (compare.py)
+  For each scenario (some set of substations lost) the graph decides, for each surviving
+  substation, (a) which detector tier it has and (b) whether its alert can still reach a fusion
+  point:
+    tiered   every substation runs its own correlator, so local detection never needs the
+             network. It gets the FUSED recall if a surviving PMU observes it (its own PMU, a
+             neighbour's, or deduced through a zero-injection bus), else the STATION recall. The
+             alert counts as DELIVERED only if the substation can still reach its hub or the CC
+             (a BFS on the surviving grid).
+    central  a substation is served only if it can still reach a control centre (primary, or the
+             standby in the budget-matched default); otherwise NOTHING is watching it. Every
+             substation has a PMU, so a served one gets the fused recall.
+  The primary security metrics count only DELIVERED coverage ("an alert nobody can receive does
+  not count"); local coverage is shown as a secondary number. Cross-substation fusion gain is
+  not credited anywhere (one testbed substation cannot measure it); if it is real it favours the
+  tiered design, so leaving it out is conservative. In every bootstrap replicate the fused recall
+  is floored at the station recall ("removing sensors cannot improve detection").
+
+Scenarios: nothing failed; any ONE substation lost (each in turn); a 50 km REGIONAL outage
+  around each substation; a RANDOM double loss (100 random pairs); a TARGETED double loss, where
+  an adversary adapted to each design picks the worst pairs it can find among that design's
+  control centres, hubs, standby and its 10 most damaging single losses (the best 40 pairs are
+  kept; the same search budget is used against every grid); and the WORST scenario of all.
+
+The metrics (14 count towards the verdict)
+  PERFORMANCE (3)         attack coverage with nothing failed; latency from bay to first fused
+                          verdict; busiest link as a share of capacity.
+  SECURITY OUTCOMES (5)   coverage still DELIVERED after: one substation lost / 50 km outage /
+                          random 2 lost / adversary's 2 lost / the worst scenario.
+  SECURITY OBJECTIVES (5) single points of failure (bridges + cut vertices); worst one-substation
+                          loss (share of the rest cut off); blast radius of one compromised hub;
+                          lateral reach of an intruder; fewest independent routes to a control
+                          centre.
+  PRICE (1)               total cost (lines + fibre + sensors + computers).
+  Not counted (shown for information): CC ingress, cores, PMU count, local coverage.
+
+The data: 90 synthetic layouts (sizes 20, 40, 80 substations x 30 seeds), each with its own
+random sites; plus the 7 standard grids reported separately (PART 6.5).
+
+Results (your run, 90 layouts, means; "worst" = worst failure scenario)
+                                     naive    budget-matched   control   OPTIMIZED
+   coverage, nothing failed          0.565       0.565          0.565     0.565   (tie)
+   delivered, 1 substation lost      0.450       0.534          0.558     0.564
+   delivered, 50 km outage           0.389       0.487          0.546     0.556
+   delivered, random 2 lost          0.364       0.503          0.549     0.559
+   delivered, adversary's 2 lost     0.118       0.357          0.504     0.533
+   delivered, worst scenario         0.000       0.000          0.427     0.440
+   single points of failure           79.3        48.3           48.3       0
+   blast radius (share exposed)      100%        100%           22.2%     22.5%
+   fewest routes to a control ctr      1           1              1         2
+   total cost (million kUSD)         2.70        3.58           3.58      3.62
+   latency (ms)                       451.3       450.7          462.7     462.7
+
+PMUs, for information: the optimized grids install 13.1 on average, the defaults 46.7 (one per
+substation).
+
+Writes  outputs/step7_verdict.csv (every metric, interval, outcome), step7_tally.csv,
+        step7_layouts.csv, step7_by_size.csv, step7_attribution.csv, step7_cases.csv,
+        step7_summary.json (verdicts + self-check), step7_scorecard.png (the picture),
+        step7_sensitivity.csv (only with --extras).
+Flags   --sizes 20 40 80  --seeds 30  --require-measured  --sensitivity  --no-cases  --no-figure
+
+
+------------------------------------------------------------------------------------------
+STEP 8   step8_forward_test.py   -   train early, test late (the closest thing to a test set)
+------------------------------------------------------------------------------------------
+Question   Test.csv cannot be a test set (it is the same recording). Time is the honest axis
+           instead: if a model is trained on the first part of the capture, what does it do on
+           what comes next?
+Trains / tests   YES, and it scores the held-out part exactly ONCE.
+
+The split (by the 20 time blocks)
+    blocks 0 - 13    TRAIN  (686 messages). The alert threshold is set from out-of-fold scores
+                     inside this part only.
+    block 14         PURGE  (dropped: its first messages are near-duplicates of block 15's last)
+    blocks 15 - 19   TEST   (330 messages: Masquerade 148, Normal 114, Replay 32, Injection 28,
+                     Fault 8). Never seen, neither by the model nor by the threshold.
+
+Results (your run)
+  Five-class macro-F1 on the test part vs the blocked-CV average:
+                          forward test     blocked CV
+      all 52 features        0.536           0.714
+      station 20             0.571           0.723
+      process 32             0.262           0.308
+  Per-class recall (all features), test part:
+      Normal 0.561 (64 of 114)   Fault 1.000 (8 of 8)   Masquerade 0.635 (94 of 148)
+      Injection 0.393 (11 of 28)   Replay 0.312 (10 of 32)
+  Where the mistakes go (rows = truth, columns = prediction):
+                 Normal  Fault  Masq  Inj  Replay
+      Normal        64     0     0    16     34
+      Fault          0     8     0     0      0
+      Masquerade     2     2    94    48      2
+      Injection      9     0     8    11      0
+      Replay        13     1     4     4     10
+    Two patterns stand out: 48 of 148 Masquerade messages are called Injection, and 50 of 114
+    Normal messages are called Injection or Replay. In the later part of the capture the
+    classes blur into each other more than in the average block.
+  The three detector tiers on the test part (threshold from the training part only):
+      tier       coverage (train OOF -> test)   false alerts of 122 non-attack   Masq  Inj  Replay
+      sentinel      0.581 -> 0.528                    2  (1.6%)                  0.93  0.46  0.19
+      station       0.425 -> 0.319                    1  (0.8%)                  0.51  0.36  0.09
+      fused         0.540 -> 0.503                    4  (3.3%)                  0.76  0.46  0.28
+
+How to read it
+  * The forward test is HARSHER and more realistic than blocked CV: expect roughly 0.15-0.18
+    lower macro-F1 on later data. It says "worse", not by exactly how much: it is ONE split of
+    330 messages. Counts are printed beside every rate.
+  * Fault has 8 test messages: its recall (1.000) is an anecdote, not a measurement.
+  * False-alert rates (0.8%, 1.6%, 3.3%) are counts of 1, 2 and 4 messages: do not over-read the
+    difference from the 1% target.
+  * The station tier loses the most (0.425 -> 0.319, a drop of 0.106); the sentinel (-0.053) and
+    the fused tier (-0.037) lose less. The tiers were already indistinguishable, and with 330
+    messages that remains true.
+Writes  outputs/step8_forward_test.json, step8_forward_classes.csv, step8_forward_tiers.csv,
+        step8_forward_confusion_all.csv
+
+
+------------------------------------------------------------------------------------------
+THE LAST STEP OF A FULL RUN: the unit tests (tests/)
+------------------------------------------------------------------------------------------
+run_pipeline.py finishes with 153 unit tests (python -m unittest discover -s tests). They are
+PROPERTY tests, not snapshots of one run's numbers: "the designed grid has no bridge for any seed
+and size", "every Dijkstra zone is connected", "a model that is secretly given the clock as a
+feature is caught", "the verdict rule says NOT ESTABLISHED when a grid is compared with itself".
+Six are skipped unless you also install networkx and mlflow (optional cross-checks). Many were
+written by first breaking the code on purpose (mutation testing) and checking the tests notice.
+The design and comparison tests use fixed placeholder measurements, so they give the same answer
+on every machine (an earlier version read your machine's timings and failed on a slower CPU).
+
+
+##########################################################################################
+PART 5   STEP 5 IN DEPTH: BUILDING A GRID WITH GRAPH ALGORITHMS
+##########################################################################################
+All of this lives in src/design/. A graph here is: nodes = substations, edges = transmission
+lines. Fibre-optic communication rides on the same corridors, so the communication graph has the
+same shape as the power graph (edge latency = length x 5 microseconds per km + 0.1 ms per hop).
+
+5.0  The sites (sites.py)
+-------------------------
+40 sites are scattered at random in a 300 km square (side grows with the square root of the
+count so density stays constant), with a minimum spacing so substations do not stack. 20% are
+generators, 20% are "junctions" with no generation and no load (zero-injection), the rest are
+loads; total generation is scaled to 120% of load. A seed makes it reproducible. You can instead
+supply your own sites in a CSV (id,x_km,y_km,kind,mw). Costs: lines 1,500 kUSD/km (assumed).
+
+5.1  Stage A - the lines: minimum spanning tree, then repair weak points (power.py)
+-----------------------------------------------------------------------------------
+Goal: connect all sites so that no single line or substation outage splits the grid, as cheaply
+as possible. The exact problem ("survivable network design") is NP-hard, so the code uses the
+classic two-phase heuristic.
+
+ Phase 1 - Kruskal's MST (the cheapest connected backbone).
+   1. List every pair of sites with its length in km.
+   2. Sort them shortest first.
+   3. Walk the list; accept a pair only if its two ends are not yet connected (checked with a
+      union-find structure); otherwise it would close a loop and is skipped.
+   4. Stop with n-1 = 39 lines. This is a TREE: cheapest, but "radial": every line is a bridge
+      and every interior substation a cut vertex.
+
+ Phase 2 - greedy augmentation guided by Tarjan's low-link search.
+   1. Find the weak points: BRIDGES (lines whose loss splits the grid) and CUT VERTICES
+      (substations whose loss splits it). One depth-first search (iterative, so no recursion
+      limit) gives each node a discovery time disc[u] and a low[u] = the earliest discovery time
+      reachable from u's subtree using at most one back-edge. Line (p,u) is a bridge iff
+      low[u] > disc[p]; a non-root p is a cut vertex iff low[u] >= disc[p] for some child u (the
+      root is one iff it has 2+ children).
+   2. A candidate line (u,v) REPAIRS a weak point iff u and v lie on different sides of it
+      (BFS/DFS labels the sides).
+   3. Among the candidates (the MST edges plus each site's 6 nearest neighbours) add the one
+      that repairs the most weak points PER KILOMETRE (ties: the shorter). Repeat until no weak
+      point is left. If the candidate pool cannot finish the job, widen it to every pair.
+   Result: 8 lines added, 47 in total, zero bridges and zero cut vertices.
+
+ A tiny example:      A--B--C--D        a path: 3 bridges, B and C are cut vertices
+                      add D--A          a ring: no bridge, no cut vertex -> N-1 secure
+ One extra line fixed everything because it joined the two ends. In a real network the greedy
+ rule chooses short lines that close the most loops.
+
+ What "N-1 secure" means HERE: the grid stays CONNECTED after losing any one line or any one
+ substation. It does NOT check that the surviving lines can carry the rerouted power (that needs a
+ power-flow model). Say so in your report (PART 8).
+
+5.2  Stage B - where the PMUs go: a dominating-set integer program (observability.py)
+--------------------------------------------------------------------------------------
+Fact: a PMU at substation p measures its own bus and every line leaving it, so p AND all its
+neighbours become observable. We want every substation observable with the fewest PMUs.
+ * Formulation: binary x[v] = 1 if v gets a PMU. Minimise the sum of x subject to: for every
+   substation u, the sum of x over u and its neighbours >= 1 (k-fold redundancy: >= k). That is a
+   minimum DOMINATING SET.
+ * Solver: scipy.optimize.milp (HiGHS), exact and deterministic. Without scipy a greedy
+   algorithm plus reverse-delete is used; both answers are reported so the greedy gap is visible
+   (greedy: 13).
+ * Zero-injection rule: at a junction substation z (no generation, no load), Kirchhoff's current
+   law says the currents sum to zero. So if all but ONE member of z's closed neighbourhood are
+   observed, the last one is deduced. This spreads like a BFS fixpoint and lets the program remove
+   a PMU after re-verifying that full observability still holds. 13 -> 12 PMUs (30%).
+ * k=2 (every substation seen by two PMUs, so one PMU can fail) needs 25 PMUs.
+ Caveat: the data cannot say whether detection stays as good on a bus observed only by
+ inference. E1 only shows the phasors do not matter for detection at all.
+
+5.3  Stage C - zones, hubs and the control centre (hierarchy.py)
+-----------------------------------------------------------------
+Every substation always hosts a station correlator. The question is whether HUBS are needed
+between stations and the control centre (CC), how many, and where.
+ 1. All-pairs shortest latency: Dijkstra from every node gives the latency matrix D.
+ 2. For k = 1, 2, ..., 12 zones: choose k hub sites by PAM k-medoid clustering (a facility-
+    location heuristic): start greedily, then repeatedly SWAP a hub with a non-hub if that lowers
+    the bay-weighted total latency to the nearest hub; 6 random restarts.
+ 3. The zones are the cells of a multi-source Dijkstra from the hubs. Because each node inherits
+    its cell from its parent in the shortest-path tree, every zone is CONNECTED by construction:
+    its members can reach their hub without leaving the zone (tested on 20 random graphs).
+ 4. Check the constraints for that k:
+      blast radius   no hub fronts more than 25% of all bays            (policy, assumed)
+      hops           evidence travels at most 4 hops to its hub
+      zone size      a zone has at least 3 stations (enough to fuse across)
+      latency        bay -> hub verdict <= 1,000 ms; -> CC verdict <= 10,000 ms
+      compute        a node needs <= 70% of 8 cores
+ 5. Pick the SMALLEST k that satisfies all (cost rises with k). The whole sweep is saved, so the
+    report can show which constraint forced each extra zone and which were slack.
+ 6. The CC goes on a non-hub substation (the one with the smallest bay-weighted latency to the
+    hubs) so a single failure never removes two roles. With k = 1 the hub and CC are the same
+    node, giving 3 levels instead of 4.
+ Latency model (milliseconds):
+    bay -> hub verdict = wait for the next message (1000/2.294 = 436)
+                         + sentinel p95 + station p95 + hub p95   (the three scorings, from E4)
+                         + 0.2 (local network) + worst station-to-hub network latency
+    bay -> CC verdict  = the above + worst hub-to-CC latency + one more p95 scoring
+ Compute: cores needed = bays served x message rate x per-message scoring cost / utilisation cap,
+ where the cost is E4's batch figure. At 2.3 messages/s it is ~0.00 cores everywhere.
+
+5.4  Stage D - stress tests are all traversals (security.py)
+-------------------------------------------------------------
+ * FAILURE SWEEPS (BFS on "the graph minus the failed nodes"). For each failure, a BFS from the
+   control centre (and one from each hub) finds which stations can still deliver an alert.
+   One sweep deletes each substation in turn; the other deletes everything within 50 km of each
+   substation (a storm or a coordinated attack: fibre rides the same towers).
+   Four views are scored: central (needs the CC), central + backup CC, tiered fused (reach hub
+   or CC), tiered any-level (local detection, which is 1.0 by construction).
+ * LATERAL MOVEMENT (BFS from a compromised node). On a flat network all links are usable; on
+   the zoned network only links inside a zone are. The share of bays reached is the intruder's
+   range: 100% flat vs mean 18.6% / max 24.6% zoned.
+ * PATH DIVERSITY (maximum flow). Menger's theorem: the number of independent routes between two
+   nodes equals the smallest number of nodes whose loss separates them. Computed by Edmonds-Karp
+   max-flow on a graph where every substation is split into an "in" and an "out" node joined by a
+   capacity-1 arc. Result: every substation has >= 2 vertex-disjoint routes to the CC.
+ * BACKUP CONTROL CENTRE for the centralised baselines: the bay-weighted median site at least a
+   minimum distance from the primary. Included so the centralised designs are not a straw man.
+
+5.5  Stage E - turning the design into the numbers an architecture review asks for (evaluate.py)
+------------------------------------------------------------------------------------------------
+ * Traffic is routed along shortest-latency trees and summed per link, so "bandwidth" is a per-
+   corridor load, not one aggregate. Per bay: evidence vector 13.8 bytes/s (6 features) vs raw
+   119 bytes/s (52 features) vs phasors only 73 bytes/s.
+ * Costs: lines, fibre, sensors, computers (all assumed prices).
+ * The A / B / B+ / C comparison (PART 4 step 5) and the role -> model table.
+
+5.6  The hand-written graph library (graph.py)
+-----------------------------------------------
+BFS, DFS components, Tarjan bridges/cut vertices, multi-source Dijkstra, Kruskal with union-find,
+Edmonds-Karp max-flow, minimum vertex cut. Written by hand so each design decision can name the
+traversal that made it, and so the project needs no extra dependency. tests/test_graph.py checks
+every routine against networkx on random graphs when networkx is installed (pip install
+networkx; five tests are skipped otherwise).
+
+
+##########################################################################################
+PART 6   DEFAULT GRID VERSUS OPTIMIZED GRID: HOW THE VERDICT IS REACHED
+##########################################################################################
+
+6.1  Why a rule fixed in advance
+--------------------------------
+A comparison where the author may pick the yardstick afterwards proves nothing. So the rules
+below were written BEFORE the results were looked at, are printed together with the results, and
+are included in the unit tests. A rule that cannot say "no" is not evidence; section 6.5 shows
+this one can.
+
+6.2  The outcome of one metric
+------------------------------
+For every metric the code computes the difference (optimized minus default) and a 95% interval
+for it. The metric has a TOLERANCE: the smallest difference that matters.
+   * "optimized better" (or "worse") only if the WHOLE interval lies beyond the tolerance;
+   * "tie" if the whole interval lies inside plus-or-minus the tolerance;
+   * "inconclusive" otherwise (the interval straddles the tolerance).
+Tolerances: detection coverage 0.01; latency 10 ms (1% of the 1,000 ms tier-2 budget); link
+utilisation 0.01 of capacity; single points of failure 0.5; blast radius and lateral reach 0.02;
+independent routes 0.5; price 5% (relative).
+The interval is a PAIRED TWO-LEVEL bootstrap: layouts are resampled with replacement (the spread
+between synthetic grids) crossed with the 300 detector-recall replicates (the spread in the
+measured data), and both grids are scored on the same resamples.
+
+6.3  Two kinds of security metric (and why it matters)
+-------------------------------------------------------
+ * OBJECTIVES are what the design algorithms minimise directly: bridges and cut vertices, zone
+   share, routes to the CC. Beating the default on them shows the algorithm WORKED; it does not
+   show the grid is safer.
+ * OUTCOMES are what the design never optimised: how much attack detection SURVIVES a failure
+   (one lost, regional, random double, adversary's double, worst case).
+Only outcomes can establish "better".
+
+6.4  The overall label
+-----------------------
+   OPTIMIZED BETTER    >= 1 security OUTCOME win, 0 security losses (either kind), 0
+                       performance losses. Labelled "(narrow)" unless most outcomes are clear wins.
+   NOT ESTABLISHED     otherwise, and the reasons are listed.
+Price is never netted against security (a higher price does not veto a win, and a security gain
+is not "bought" with a lower price); it is reported next to the verdict with its percentage.
+
+6.5  Evidence that the rule can say no
+---------------------------------------
+Every run executes a self-check (outputs/step7_summary.json):
+   optimized graded against ITSELF          -> NOT ESTABLISHED (all 14 metrics tie)
+   roles SWAPPED (naive plays "optimized")  -> NOT ESTABLISHED (10 metrics say the default is better)
+A rule that returned "better" in either case would be broken.
+
+6.6  What happened on YOUR laptop, and why
+-------------------------------------------
+Your run's verdicts:
+   vs naive default            NOT ESTABLISHED   (10/10 security wins; 1 performance metric worse)
+   vs budget-matched default   NOT ESTABLISHED   (10/10 security wins; 1 performance metric worse)
+   vs the control              OPTIMIZED BETTER (narrow)
+The single performance metric that is "worse" is LATENCY: worst bay -> first verdict is
+462.7 ms for the optimized grid and 451.3 ms for the naive one; the difference is +11.4 ms
+(95% interval 11.0 to 11.8), just above the 10 ms tolerance. On the first machine it was +4.6 ms
+and the label was OPTIMIZED BETTER.
+
+Why: the centralised design scores a message ONCE (at the control centre); the tiered design
+scores it at the sentinel, the station and the hub. The extra cost is (sentinel p95 + station p95)
+minus the network time the zones save (about 4 ms here):
+      your laptop      4.90 + 10.50 - 4.0  =  about 11.4 ms
+      first machine    2.92 +  5.69 - 4.0  =  about  4.6 ms
+So the verdict flips when the two extra scorings together exceed roughly 14 ms, which depends on
+the CPU that ran step 4. The same effect explains the by-size results: at 80 substations the
+centralised path is longer (more network time), the tiered path saves more, and the label is
+OPTIMIZED BETTER again even on your laptop; at 20 and 40 it is NOT ESTABLISHED.
+   by size (your run)         naive              budget-matched     control
+      20 sites                NOT ESTABLISHED    NOT ESTABLISHED    OPTIMIZED BETTER (narrow)
+      40 sites                NOT ESTABLISHED    NOT ESTABLISHED    OPTIMIZED BETTER (narrow)
+      80 sites                OPTIMIZED BETTER   OPTIMIZED BETTER   OPTIMIZED BETTER (narrow)
+
+What this means, honestly:
+   * The security result does not depend on the CPU. Every one of the 10 security metrics is a
+     clear win on both machines.
+   * The performance cost is real but small: 11 ms on a path of about 460 ms (2.5%), of which
+     436 ms is simply waiting for the next message; both grids are far inside the 1,000 ms budget.
+   * The label "NOT ESTABLISHED" is the pre-set rule doing exactly what it was built to do.
+Your options for the report (this is your call, not mine):
+   (a) KEEP THE RULE and state it plainly: "the optimized grid is clearly more secure; it pays
+       about 11 ms of extra scoring latency on laptop-class hardware, which is outside the 10 ms
+       tolerance we fixed in advance, so the overall label is NOT ESTABLISHED on this hardware;
+       it holds on faster hardware and on larger grids". This is the most defensible version.
+   (b) Say that a 10 ms tolerance is arguable (it is 1% of the tier-2 budget) and report the
+       verdict under a different tolerance too -- but label that choice as made AFTER seeing the
+       result, never as the primary result.
+   (c) Re-run step 4 on faster hardware (E4 is hardware-specific) and say which CPU produced it.
+
+6.7  What actually does the work? (outputs/step7_attribution.csv, your run)
+-----------------------------------------------------------------------------
+Six variants, mixing lines and detection architecture (means over 90 layouts):
+                    SPOF  routes  blast  1 lost  regional  adversary  worst   cost (M kUSD)
+   naive             79.3   1     100%   0.450    0.389     0.118     0.000    2.70
+   budget-matched    48.3   1     100%   0.534    0.487     0.357     0.000    3.58
+   opt lines+central  0.0   2     100%   0.548    0.504     0.397     0.000    3.61
+   radial+tiered     79.3   1    21.6%   0.552    0.542     0.482     0.409    2.70
+   bm lines+tiered   48.3   1    22.2%   0.558    0.546     0.504     0.427    3.58
+   OPTIMIZED          0.0   2    22.5%   0.564    0.556     0.533     0.440    3.62
+Reading:
+   * The TIERED DETECTION does most of the work. Adding it to the cheapest tree (radial+tiered)
+     lifts the worst-case coverage from 0 to 0.409 at the SAME cost as the naive default.
+   * The GRAPH-DESIGNED LINES add the rest and remove every single point of failure (79 -> 0)
+     and give every substation two independent routes. Their gain over untargeted lines is
+     clearest against the adversary (0.504 -> 0.533) and in the worst case (0.427 -> 0.440).
+   * That is why the verdict against the control is only "narrow": only one outcome (the
+     adversary) is a clear win; three are inconclusive.
+Say this in the report: it is the honest answer to "which part of the design is responsible".
+
+6.8  The seven standard grids (IEEE 14/30/39/57/118/300 and Illinois 200)
+--------------------------------------------------------------------------
+The same comparison on real test-system topologies (dataset/grids/). Coordinates there are
+schematic, not geography, so every km-based number is relative.
+   * Security: the optimized design keeps about 0.25-0.50 of attack coverage in the worst failure
+     scenario; the naive default keeps 0. Single points of failure of the real as-built networks
+     range from 0 (IEEE 14) to 69 (IEEE 300); the optimized grids have 0.
+   * Verdict vs naive and budget-matched on your laptop: OPTIMIZED BETTER for IEEE 300 and
+     Illinois 200; NOT ESTABLISHED for IEEE 14, 30, 39, 57 and 118 -- always for the same single
+     reason, the latency metric. Against the as-built networks every verdict is NOT ESTABLISHED
+     for the same reason.
+   * Do not quote the cost column against the as-built networks: it prices schematic geometry,
+     so it is not a real price comparison.
+
+6.9  Sensitivity (--extras; outputs/step7_sensitivity.csv, from the first machine)
+-----------------------------------------------------------------------------------
+Does the verdict survive different assumptions? Verdict vs naive and vs budget-matched:
+   regional outage 25 km or 100 km; lines at 0.5x or 2x cost; fibre 4x cost; detector recall at
+   the LOWER 95% bound      -> unchanged: OPTIMIZED BETTER
+   no credit for PMU-inferred observability -> vs naive still 10 of 10 security wins; vs budget-
+                              matched 7 of 10 and the label becomes "(narrow)"; intact coverage
+                              drops 2.6 points (inconclusive)
+   5x slower hardware       -> NOT ESTABLISHED (+39 ms latency): the same effect as 6.6, larger.
+The CPU dependence is therefore the one assumption that moves the headline.
+
+
+##########################################################################################
+PART 7   RUNNING, TRACKING AND TESTING
+##########################################################################################
+(RUNNING.md has the same information with troubleshooting; this is the short version.)
+
+7.1  One-time setup (PowerShell, in the project folder)
+-------------------------------------------------------
+    py -m venv .venv
+    .\.venv\Scripts\Activate.ps1      (if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned)
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+Optional: pip install networkx mlflow   (extra cross-checks and a browser dashboard).
+
+7.2  The two commands, and what "smoke" means
+---------------------------------------------
+    python run_pipeline.py --smoke     ~2 minutes. Rehearsal: does every step RUN?
+    python run_pipeline.py             ~13 minutes on your laptop. The real run.
+BOTH of them train and test models. The difference is size, not purpose: --smoke uses 3 folds,
+40 trees, 60 bootstrap replicates and 3 layout seeds, writes to outputs_smoke/ and models_smoke/,
+and its numbers are never reportable (e.g. blocked-CV macro-F1 0.76 instead of 0.71). A run is
+flagged "reportable" only when it is the whole pipeline with default settings and no overrides.
+Where the training and testing happens:
+    steps 3-4 (blocked CV)   5 models per experiment, one per fold; tested on the unseen blocks
+    step 6                   the three final detectors; out-of-fold scores set the thresholds
+    step 8                   one model on blocks 0-13, tested once on blocks 15-19
+    steps 1, 2, 5, 7         train nothing (profile, layers, grid design, grid comparison)
+Useful variations
+    python run_pipeline.py --only 4 6 8          just the train/test steps (names work too)
+    python run_pipeline.py --skip 3
+    python run_pipeline.py --extras              also the slow sensitivity and scaling sweeps
+    python run_pipeline.py --keep-going          do not stop at the first failing step
+    python run_pipeline.py --name "600 trees" --note "after changing max_depth"
+Settings can be overridden without editing config.py through environment variables
+(PP_N_ESTIMATORS, PP_N_SPLITS, PP_BOOTSTRAP_B, PP_ENSEMBLE_SEEDS, PP_OUTPUT_DIR, PP_MODELS_DIR).
+They are written into the run record, and any override makes the run non-reportable.
+
+7.3  What a run leaves behind
+-----------------------------
+    runs/20261018-223917/
+        summary.md     read this first: headline numbers, step table, settings (VS Code:
+                       Ctrl+Shift+V to preview)
+        run.json       everything, machine-readable: every number, settings, package versions,
+                       git commit, dataset fingerprint
+        status.json    what `runs.py watch` reads
+        01_profile.log ... 09_tests.log     the full output of each step
+        outputs/       copy of the result files of that run
+    runs/index.csv     one row per run (macro-F1, k*, coverage, forward F1, verdicts, tests)
+Two runs are comparable only if the settings match; `runs.py diff` shows when they do not.
+
+7.4  Looking at runs
+--------------------
+    python runs.py                    every run, newest last
+    python runs.py show last          the full summary of one run (ids can be abbreviated)
+    python runs.py diff prev last     settings that differ, then every number that moved
+    python runs.py watch              follow a run in progress: step i of n, seconds in the
+                                      current step, last line printed, "quiet for N s" warnings
+Ctrl+C stops cleanly and records the run as "interrupted".
+
+7.5  In VS Code
+---------------
+ * File > Open Folder; accept the extension prompt (Python, Rainbow CSV, Data Wrangler).
+ * Ctrl+Shift+P > Python: Select Interpreter > .venv.
+ * Terminal > Run Task...: smoke run, full run, train+test only, unit tests, watch, list/show/
+   compare runs, MLflow. Ctrl+Shift+B starts the full run.
+ * Testing (beaker icon): the 153 unit tests with green/red marks; run or debug one.
+ * Run and Debug (Ctrl+Shift+D): set a breakpoint anywhere in src/, pick "Debug step 6", F5.
+ * Open runs/<id>/summary.md (preview), runs/index.csv (Rainbow CSV / Data Wrangler) and any
+   outputs/*.csv.
+ * Source Control: run.json and summary.md diff nicely; commit them as your experiment log.
+
+7.6  Your runs so far
+---------------------
+   20261018-222624_smoke   2.4 min   ok        smoke (not reportable)
+   20261018-223917         12.8 min  FAILED    the full run. All eight steps were ok; the status
+                                      is "failed" only because ONE unit test failed
+                                      (test_price_is_never_netted_against_security).
+The cause was the test, not the project: it read your machine's measured latencies from outputs/
+and, with your slower CPU, the optimized grid was 11 ms slower, which that test did not expect.
+The test now uses fixed placeholder measurements (tests/test_design.py and test_compare.py) and
+the suite passes with your outputs (153 tests, 1 skipped for the networkx check on the machine
+where I ran it; 6 skipped on yours until you install networkx and mlflow). The numbers in
+outputs/ are unaffected. To get a clean record, re-run python run_pipeline.py (13 min), or just
+python run_pipeline.py --only tests (about 70 s) to see the suite pass.
+(Your two .txt files, final_t&t.txt and rehersal_t&t.txt, are the saved terminal output of
+these two runs; the same text is in runs/<id>/*.log.)
+
+7.7  Reading results without fooling yourself
+---------------------------------------------
+ * Report the blocked-CV numbers (0.714 +/- 0.029). Shuffled (0.789) and Train->Test (0.987) are
+   shown only to size the inflation.
+ * The forward test (0.536) is the harsher, more realistic number; it is one split of 330 messages.
+ * The three detector tiers are statistically indistinguishable; do not present one as best.
+ * E4 latencies are YOUR CPU's. The grid verdict depends on them (PART 6.6).
+ * Two full runs on the same machine and data give identical numbers except timings.
+
+
+##########################################################################################
+PART 8   LIMITS AND HONEST CAVEATS
+##########################################################################################
+
+8.1  About the data
+-------------------
+ * 1,094 messages from one ~8-minute capture of one testbed. Injection and Replay have ~100
+   messages each; their recalls carry +/-0.12 to 0.16 SD across folds, Fault (41 messages) is
+   noisier still.
+ * Train.csv and Test.csv are one recording, so there is no independent test set. The forward test
+   is the nearest substitute and it is a single split.
+ * Rows are not independent (the timing columns are differences with the previous row), which is
+   why splitting is by time block.
+ * No attack episodes: attacks are interleaved messages, so there is no "time to first alert".
+ * The meaning of derived columns (consistency, Cs, the MU*Cs flags) is my reading, not
+   documentation from the dataset's authors; I could not open the Kaggle page.
+
+8.2  About the grid work
+------------------------
+ * COSTS, DELAYS AND POLICIES ARE ASSUMED, not measured: line price, PMU price, 25% blast cap,
+   50 km outage radius, per-hop delay, minimum zone size. They are all in config.GRID_ASSUMPTIONS.
+   The sensitivity sweeps show which conclusions survive changing them; the cost numbers
+   themselves are only relative.
+ * N-1 IS TOPOLOGICAL: the grid stays connected. Whether the surviving lines can carry the
+   rerouted power needs a power-flow model, which is outside this project.
+ * Grids are SYNTHETIC (random sites) or SCHEMATIC (the 7 standard cases have layout coordinates,
+   not geography). Every kilometre-based quantity is relative.
+ * One testbed substation's recall is used for every substation. Cross-substation fusion (which
+   would help the tiered design) is deliberately not credited.
+ * The adversary is a scenario set (worst pairs among a pool), not a threat model.
+ * The default grids are one reasonable reading of "not optimized". The budget-matched default and
+   the control exist so the result is not an artefact of a weak baseline.
+ * The detection results (recall, false alerts) come from one substation's message-level data;
+   the grid-level coverage numbers are therefore a model of the system, not a measurement of one.
+ * The tiered design is slower by the cost of two extra scorings (PART 6.6).
+
+8.3  Your numbers versus the first machine
+------------------------------------------
+The project was first run on a different computer (the cloud machine I built and checked it on). Both runs are valid; the noisy numbers differ a
+little because library versions (yours: Python 3.14.7, numpy 2.5.4, pandas 3.0.6, scikit-learn
+1.9.1, xgboost 3.4.1) change tree-building details, and the timings differ because the CPU does.
+Things that depend only on the data and graph algorithms (the grid design, class counts, audit)
+are identical on both.
+
+                                           your laptop        first machine
+   blocked-CV macro-F1, all 52             0.714 +/- 0.029    0.711 +/- 0.032
+   blocked-CV macro-F1, station 20         0.723              0.719
+   Train -> Test (leaky)                   0.987              0.989
+   Injection / Replay recall (blocked)     0.396 / 0.402      0.404 / 0.394
+   k* (smallest sufficient features)       8                  8
+   fold-stable features                    6 (consistency, state_cb, any_relay, Cs, stDiff,
+                                              MU4Log)
+                                           first machine: consistency, state_cb, any_relay,
+                                              stDiff, recentChange, MU3Log
+   E4 p95: sentinel / station (ms)         4.90 / 10.50       2.92 / 5.69
+   attack recall at <=2,000 false alerts/day  0.783           0.794
+   E8 mean unseen-attack gap               0.291              0.278
+   detector tiers (coverage at 1%): sentinel  0.625           0.538
+                                    station   0.528           0.524
+                                    fused     0.534           0.558
+   forward-test macro-F1, all / station    0.536 / 0.571      0.551 / 0.573
+   worst-scenario delivered coverage       0.440              0.445
+   latency penalty, optimized vs naive     +11.4 ms           +4.6 ms
+   overall verdict vs naive / budget-matched  NOT ESTABLISHED  OPTIMIZED BETTER
+   grid design (lines, PMUs, zones, levels)   47, 12, 6, 4      47, 12, 6, 4
+The tier coverages move the most (0.625 vs 0.538 for the sentinel) because they rest on a handful
+of false-alert-limited messages; the intervals (PART 4 step 6) overlap in both runs. This is also
+why you should never present an individual tier as "best".
+
+8.4  What the project does NOT claim
+------------------------------------
+ * It does not claim to detect attacks in a real utility; it measures a testbed capture.
+ * It does not claim phasors are useless in general; only that in THIS data, for THESE five
+   classes, they add nothing beyond the station layers.
+ * It does not claim the optimized grid is cheaper (it is 37% dearer than the naive default; it
+   is about as expensive as a default given the same money).
+ * It does not claim "optimized is better" regardless of hardware: see PART 6.6.
+
+8.5  What to say in the report (suggested wording)
+--------------------------------------------------
+ "Train.csv and Test.csv are the same recording; we therefore evaluate with blocked time
+  cross-validation (macro-F1 0.714 +/- 0.029) and a forward test (0.536). A designed, N-1 secure
+  grid with tiered detection keeps an attack coverage of 0.44 in its worst failure scenario where
+  both default grids keep none, has no single point of failure (defaults: 79 and 48), and exposes
+  22% of bays to one compromised hub instead of 100%. It costs 37% more than the cheapest tree
+  and the same as an equally-expensive untargeted default, and adds about 11 ms of scoring
+  latency on our hardware, which exceeds our pre-set 10 ms tolerance; the overall label is
+  therefore 'not established' on this hardware and 'optimized better' on faster hardware and on
+  larger grids."
+
+
+##########################################################################################
+PART 9   GLOSSARY
+##########################################################################################
+ attack coverage     mean recall over Masquerade, Injection, Replay at a given threshold.
+ bay                 one line terminal or generator/load tie at a substation; the unit that has a
+                     sentinel. 126 bays in the 40-substation design.
+ blast radius        share of bays exposed if one hub / control centre is compromised.
+ block               one of 20 equal-width contiguous time slices of the capture (~24 s).
+ blocked CV          cross-validation that holds out whole blocks.
+ bridge              a line whose loss disconnects the grid.
+ budget-matched      the default grid that spends the same money as the optimized one on extra
+ default             lines, without aiming it.
+ CC                  control centre (the top level).
+ control (bm-lines+  budget-matched lines with the tiered detection; separates "good lines" from
+ tiered)             "tiered detection".
+ cut vertex          a substation whose loss disconnects the grid.
+ delivered coverage  attack coverage counting only alerts that can still reach a hub or the CC.
+ dominating set      nodes such that every node is in the set or adjacent to one (PMU placement).
+ EncodedModel        the wrapper that copes with folds missing a class.
+ fail open           a surviving station keeps detecting locally even if it is cut off.
+ false alert         a Normal or Fault message flagged as an attack.
+ forward test        train on early blocks, test on late blocks (step 8).
+ fused tier          the detector with all 52 columns (needs a PMU-class sensor).
+ GOOSE               IEC 61850 fast event message; carries stNum and sqNum.
+ hub                 zone-level fusion point (level 3).
+ IED                 intelligent electronic device (relay etc.).
+ k*                  smallest feature budget within 0.01 macro-F1 of the full model (E3).
+ Kruskal             MST algorithm (cheapest edge that does not close a loop).
+ macro-F1            average of per-class F1 with equal class weight.
+ MU                  merging unit; MU1..MU4 in the testbed.
+ N-1 secure          survives any single line or substation loss (here: stays connected).
+ naive default       MST lines, a PMU everywhere, one control centre, centralised detection.
+ OOF                 out-of-fold: scored by a model that never saw that fold.
+ PAM                 partitioning around medoids; the k-medoid algorithm used for zoning.
+ PMU                 phasor measurement unit; here a process-bus sensor feed at a substation.
+ process bus         carries raw measurements (voltages, currents) from the merging units.
+ purge               the dropped block between train and test in step 8.
+ recall              share of a class that was caught.
+ reportable          flag on a run: full pipeline, default settings, no overrides.
+ sentinel            the bay-level detector with the 6 fold-stable features (level 1).
+ smoke run           fast non-reportable rehearsal (run_pipeline.py --smoke).
+ SPOF                single point of failure (bridges + cut vertices).
+ station             the layers goose + consistency + relay (20 columns); also the substation-
+                     level correlator (level 2).
+ tolerance           the smallest difference that counts in the verdict rules.
+ ZIB                 zero-injection bus: a junction with no generation or load; lets
+                     observability be deduced.
+
+
+##########################################################################################
+PART 10   QUESTIONS YOU MAY BE ASKED, WITH ANSWERS
+##########################################################################################
+
+Q1  Why not just train on Train.csv and test on Test.csv?
+A   They are the same recording: every (time, class) message in Test is in Train, 48 of 52
+    columns are identical, and 23% of rows are identical in every column. That split measures
+    memorisation (0.987); the honest number is 0.714.
+
+Q2  Why macro-F1 and not accuracy?
+A   "Normal" is 41.6% of the data, so predicting Normal always is 41.6% accurate. Macro-F1 gives
+    each class equal weight, so missing Fault (41 messages) or Replay (100) is visible.
+
+Q3  Which evidence matters, and what did you learn?
+A   The station layers (GOOSE state and timing, consistency checks, relay flags). Together they
+    reach 0.723; the raw phasors alone reach 0.308 and add nothing to the station layers.
+    Masquerade and Fault are easy (93-94%); Injection and Replay are hard (~40%).
+
+Q4  Why are Injection and Replay hard?
+A   A replayed message is a genuine old message, so it looks Normal on most columns
+    (consistency 0.84, breaker state 0.12). Injection mixes both patterns (50/50). Only subtle
+    timing/counter patterns separate them, and there are only ~100 examples of each.
+
+Q5  How is the optimized grid created?
+A   Kruskal MST for the cheapest backbone; then greedy line additions guided by Tarjan's
+    bridge/cut-vertex search until nothing is a single point of failure; PMUs by an exact
+    dominating-set integer program with the zero-injection rule; zones by k-medoid on shortest-
+    path latency, taking the smallest k that meets the blast-radius, hop, size, latency and
+    compute limits; stress tests by BFS, and independent routes by max-flow (Menger).
+
+Q6  How do you know it is N-1 secure?
+A   The Tarjan search finds no bridge and no cut vertex (also unit-tested for many seeds and sizes).
+    It is topological: it proves the grid stays connected, not that the lines can carry the power.
+
+Q7  Why four levels?
+A   Because a hub may expose at most 25% of the bays. One zone would expose 100%; the smallest
+    number of zones that meets every constraint is 6, which gives sentinel, station, hub and
+    control centre. With a looser policy (k=1) you would get three levels. It is an output.
+
+Q8  Why is the optimized grid "better"?
+A   On security, clearly: it keeps 0.44 of attack coverage in the worst failure scenario (defaults:
+    0), has 0 single points of failure (79 / 48), 22.5% blast radius (100%), and two independent
+    routes everywhere (one). On performance it ties, apart from ~11 ms extra latency on your hardware.
+
+Q9  Isn't it just because it spends more?
+A   No: the budget-matched default spends the same on extra lines (but untargeted) and still keeps
+    0 in the worst case and has 48 single points of failure.
+
+Q10 Isn't it just the tiered detection?
+A   Largely yes for the worst-case coverage: tiered detection on the cheapest tree already gives
+    0.409. The designed lines add the removal of every single point of failure, two routes
+    everywhere and the edge against an adaptive adversary (0.504 -> 0.533). PART 6.7.
+
+Q11 Why does your laptop say NOT ESTABLISHED?
+A   The tiered design adds two extra model scorings; on your CPU they cost 15.4 ms against ~4 ms of
+    network saving, a net +11.4 ms, over the 10 ms tolerance fixed in advance. All security metrics
+    still win. On faster hardware or larger grids the label is OPTIMIZED BETTER. PART 6.6.
+
+Q12 What is measured and what is simulated?
+A   Measured: detector recall, feature counts, message rate, inference latency. Simulated: the
+    grids, failures and delivery of alerts. Assumed: prices, policies, delays.
+
+Q13 Why synthetic grids? What about real ones?
+A   The Kaggle data has no topology. 90 random layouts give a distribution; the 7 standard test
+    cases (IEEE 14-300, Illinois 200) show the same pattern on real topologies, with schematic
+    coordinates.
+
+Q14 Is a 1% false-alert budget realistic?
+A   It is about 725 alerts per day on this testbed. E6 shows the trade-off: ~2,000/day buys 78% recall,
+    ~10,000/day 89%. The data cannot test budgets below ~181/day (one false alert).
+
+Q15 What would you do with more data?
+A   Several substations and longer captures with real attack episodes; measure cross-substation
+    fusion gain and time-to-first-alert; add a power-flow check to N-1.
+
+Q16 Is --smoke the training and the full run the testing?
+A   No. Both train and test. Smoke is a small, fast rehearsal whose numbers are not reportable.
+
+Q17 Where does each number in the report come from?
+A   See the file guide below.
+
+
+FILE GUIDE: WHERE TO FIND EACH CLAIM
+------------------------------------
+   Train/Test are the same recording     outputs/step1_profile.json -> "audit"
+   Honest vs leaky score                 outputs/step3_protocols.csv
+   Which layer matters                   outputs/e1_views_blocked.csv
+   Smallest feature set, stable six      outputs/e3_feature_budget.csv, e3_feature_stability.csv
+   Latency of each model                 outputs/e4_compute_profile.csv
+   Alerts per day vs recall              outputs/e6_operating_points.csv
+   Unseen-attack gap                     outputs/e8_unseen_attack.csv
+   The designed grid                     outputs/step5_design_summary.json, step5_grid.png
+   Zone sweep                            outputs/step5_k_sweep.csv
+   Detector tiers + error bars           outputs/step6_tier_recall.csv
+   Default vs optimized, every metric    outputs/step7_verdict.csv  (+ step7_scorecard.png)
+   What does the work                    outputs/step7_attribution.csv
+   Verdicts per grid size / test case    outputs/step7_by_size.csv, outputs/step7_cases.csv
+   Forward test                          outputs/step8_forward_*.csv
+   Everything for one run, in one place  runs/<id>/summary.md and run.json
+   Every assumption                      src/config.py -> GRID_ASSUMPTIONS
+
+--- end of explaination.txt ---

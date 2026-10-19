@@ -1,0 +1,6 @@
+,Normal,Fault,Masquerade,Injection,Replay
+Normal,64,0,0,16,34
+Fault,0,8,0,0,0
+Masquerade,2,2,94,48,2
+Injection,9,0,8,11,0
+Replay,13,1,4,4,10
