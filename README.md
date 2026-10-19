@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Smart-grid attack detection - Predictive Learning project
 
 Detect cyber-physical attacks on a substation from IEC 61850 GOOSE traffic, then use what
@@ -217,3 +218,6 @@ E4 latencies depend on the CPU: a full run on your machine re-measures them.
   there is no time-to-first-alert. The adversary is a scenario set, not a threat model. The default builders
   are one reasonable reading of "not optimized"; the budget-matched default and the control exist so the
   result is not an artefact of a weak baseline.
+=======
+# SmartGrid_Security_Optimization
+>>>>>>> ea4e009b8ce8fe710b0579813478109665da5212
